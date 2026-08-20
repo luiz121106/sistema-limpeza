@@ -19,8 +19,8 @@ export async function GET() {
   const resend = new Resend(apiKey)
 
   // Configurações do OneSignal com fallbacks das suas chaves
-  const oneSignalApiKey = process.env.ONESIGNAL_REST_API_KEY || 'os_v2_app_jd7u57sgs5ffreqjtdhrmijficvgddifpshu32f2oraisyxjw6chyfp2r2kt4h75piptjicgdquijo543kjgkvqnxe3qozcdwzhbsay'
-  const oneSignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || '48ff4efe-4697-4a58-9209-98cf16212540'
+  const oneSignalApiKey = process.env.ONESIGNAL_REST_API_KEY
+const oneSignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || '48ff4efe-4697-4a58-9209-98cf16212540'
 
   // Datas no fuso horário de Santa Rosa Beach (Central Time)
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })
