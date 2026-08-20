@@ -2,160 +2,198 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, User, MapPin, Key, Phone, ArrowLeft, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign } from 'lucide-react'
 import Link from 'next/link'
+
+interface Property {
+  id: string
+  client_id: string
+  name: string
+  address: string
+}
 
 interface Client {
   id: string
   name: string
-  phone: string | null
   address: string
-  gate_code: string | null
   price_standard: number
   price_heavy: number
   price_move_in_out: number
-  notes: string | null
+  price_vacation: number
+  cleaner_payout: number
+  notes?: string
+  properties?: Property[]
 }
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null)
 
-  // Formulário Cadastro
+  // Modal Cliente
+  const [showClientModal, setShowClientModal] = useState(false)
+  const [editingClientId, setEditingClientId] = useState<string | null>(null)
   const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
-  const [gateCode, setGateCode] = useState('')
   const [priceStandard, setPriceStandard] = useState('')
   const [priceHeavy, setPriceHeavy] = useState('')
-  const [priceMove, setPriceMove] = useState('')
+  const [priceMoveInOut, setPriceMoveInOut] = useState('')
+  const [priceVacation, setPriceVacation] = useState('')
+  const [cleanerPayout, setCleanerPayout] = useState('')
   const [notes, setNotes] = useState('')
-  const [cleanerPayout, setCleanerPayout] = useState('');
+
+  // Modal Unidade / Imóvel
+  const [showPropertyModal, setShowPropertyModal] = useState(false)
+  const [selectedClientIdForProperty, setSelectedClientIdForProperty] = useState<string | null>(null)
+  const [propertyName, setPropertyName] = useState('')
+  const [propertyAddress, setPropertyAddress] = useState('')
+
   const [saving, setSaving] = useState(false)
 
-  // Formulário Edição
-  const [editingClient, setEditingClient] = useState<Client | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editAddress, setEditAddress] = useState('')
-  const [editGateCode, setEditGateCode] = useState('')
-  const [editPriceStandard, setEditPriceStandard] = useState('')
-  const [editPriceHeavy, setEditPriceHeavy] = useState('')
-  const [editPriceMove, setEditPriceMove] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editCleanerPayout, setEditCleanerPayout] = useState('');
-  const [editSaving, setEditSaving] = useState(false)
-
-  const fetchClients = async () => {
+  const fetchClientsAndProperties = async () => {
     setLoading(true)
-    const { data, error } = await supabase
+
+    // Buscar Clientes
+    const { data: clientsData, error: clientErr } = await supabase
       .from('clients')
       .select('*')
-      .order('name', { ascending: true })
+      .order('name')
 
-    if (!error && data) {
-      setClients(data)
+    // Buscar Propriedades
+    const { data: propertiesData, error: propErr } = await supabase
+      .from('properties')
+      .select('*')
+      .order('name')
+
+    if (!clientErr && clientsData) {
+      const merged = clientsData.map((client) => ({
+        ...client,
+        properties: (propertiesData || []).filter((p) => p.client_id === client.id),
+      }))
+      setClients(merged)
     }
+
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchClients()
+    fetchClientsAndProperties()
   }, [])
+
+  // --- Ações de Cliente ---
+  const handleOpenNewClientModal = () => {
+    setEditingClientId(null)
+    setName('')
+    setAddress('')
+    setPriceStandard('')
+    setPriceHeavy('')
+    setPriceMoveInOut('')
+    setPriceVacation('')
+    setCleanerPayout('')
+    setNotes('')
+    setShowClientModal(true)
+  }
+
+  const handleOpenEditClientModal = (client: Client) => {
+    setEditingClientId(client.id)
+    setName(client.name)
+    setAddress(client.address || '')
+    setPriceStandard(client.price_standard?.toString() || '0')
+    setPriceHeavy(client.price_heavy?.toString() || '0')
+    setPriceMoveInOut(client.price_move_in_out?.toString() || '0')
+    setPriceVacation(client.price_vacation?.toString() || '0')
+    setCleanerPayout(client.cleaner_payout?.toString() || '0')
+    setNotes(client.notes || '')
+    setShowClientModal(true)
+  }
 
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
 
-    const { error } = await supabase.from('clients').insert([
-      {
-        name,
-        phone: phone || null,
-        address,
-        gate_code: gateCode || null,
-        price_standard: parseFloat(priceStandard) || 0,
-        price_heavy: parseFloat(priceHeavy) || 0,
-        price_move_in_out: parseFloat(priceMove) || 0,
-        notes: notes || null,
-        cleaner_payout: parseFloat(cleanerPayout) || 0,
-      },
-    ])
+    const payload = {
+      name,
+      address,
+      price_standard: parseFloat(priceStandard) || 0,
+      price_heavy: parseFloat(priceHeavy) || 0,
+      price_move_in_out: parseFloat(priceMoveInOut) || 0,
+      price_vacation: parseFloat(priceVacation) || 0,
+      cleaner_payout: parseFloat(cleanerPayout) || 0,
+      notes: notes || null,
+    }
+
+    let error
+    if (editingClientId) {
+      const { error: updateError } = await supabase.from('clients').update(payload).eq('id', editingClientId)
+      error = updateError
+    } else {
+      const { error: insertError } = await supabase.from('clients').insert([payload])
+      error = insertError
+    }
 
     if (!error) {
-      setShowModal(false)
-      setName('')
-      setPhone('')
-      setAddress('')
-      setGateCode('')
-      setPriceStandard('')
-      setPriceHeavy('')
-      setPriceMove('')
-      setNotes('')
-      setCleanerPayout('');
-      fetchClients()
+      setShowClientModal(false)
+      fetchClientsAndProperties()
     } else {
       alert('Erro ao salvar cliente: ' + error.message)
     }
     setSaving(false)
   }
 
-  // Abrir Modal de Edição
-  const handleOpenEditModal = (client: Client) => {
-    setEditingClient(client)
-    setEditName(client.name)
-    setEditPhone(client.phone || '')
-    setEditAddress(client.address)
-    setEditGateCode(client.gate_code || '')
-    setEditPriceStandard(client.price_standard.toString())
-    setEditPriceHeavy(client.price_heavy.toString())
-    setEditPriceMove(client.price_move_in_out.toString())
-    setEditNotes(client.notes || '')
-    setEditCleanerPayout((client as any).cleaner_payout ? String((client as any).cleaner_payout) : '');
-  }
-
-  // Atualizar Cliente
-  const handleUpdateClient = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingClient) return
-
-    setEditSaving(true)
-
-    const { error } = await supabase
-      .from('clients')
-      .update({
-        name: editName,
-        phone: editPhone || null,
-        address: editAddress,
-        gate_code: editGateCode || null,
-        price_standard: parseFloat(editPriceStandard) || 0,
-        price_heavy: parseFloat(editPriceHeavy) || 0,
-        price_move_in_out: parseFloat(editPriceMove) || 0,
-        notes: editNotes || null,
-        cleaner_payout: parseFloat(editCleanerPayout) || 0,
-      })
-      .eq('id', editingClient.id)
-
-    if (!error) {
-      setEditingClient(null)
-      fetchClients()
-    } else {
-      alert('Erro ao atualizar cliente: ' + error.message)
-    }
-    setEditSaving(false)
-  }
-
-  // Excluir Cliente
   const handleDeleteClient = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este cliente?')) return
+    if (!confirm('Excluir este cliente removerá também suas unidades e histórico. Confirmar?')) return
 
     const { error } = await supabase.from('clients').delete().eq('id', id)
-
-    if (error) {
-      alert('Erro ao excluir: ' + error.message)
+    if (!error) {
+      fetchClientsAndProperties()
     } else {
-      fetchClients()
+      alert('Erro ao excluir cliente: ' + error.message)
     }
+  }
+
+  // --- Ações de Unidade / Imóvel ---
+  const handleOpenAddPropertyModal = (clientId: string) => {
+    setSelectedClientIdForProperty(clientId)
+    setPropertyName('')
+    setPropertyAddress('')
+    setShowPropertyModal(true)
+  }
+
+  const handleSaveProperty = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedClientIdForProperty) return
+    setSaving(true)
+
+    const { error } = await supabase.from('properties').insert([
+      {
+        client_id: selectedClientIdForProperty,
+        name: propertyName,
+        address: propertyAddress,
+      },
+    ])
+
+    if (!error) {
+      setShowPropertyModal(false)
+      fetchClientsAndProperties()
+    } else {
+      alert('Erro ao adicionar unidade: ' + error.message)
+    }
+    setSaving(false)
+  }
+
+  const handleDeleteProperty = async (propertyId: string) => {
+    if (!confirm('Deseja remover esta unidade?')) return
+
+    const { error } = await supabase.from('properties').delete().eq('id', propertyId)
+    if (!error) {
+      fetchClientsAndProperties()
+    } else {
+      alert('Erro ao remover unidade: ' + error.message)
+    }
+  }
+
+  const toggleExpand = (id: string) => {
+    setExpandedClientId(expandedClientId === id ? null : id)
   }
 
   return (
@@ -163,120 +201,141 @@ export default function ClientsPage() {
       {/* Topbar */}
       <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link
-            href="/dashboard"
-            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition"
-          >
+          <Link href="/dashboard" className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-xl font-bold text-emerald-400">Cadastro de Clientes</h1>
+          <h1 className="text-xl font-bold text-emerald-400">Gerenciamento de Clientes</h1>
         </div>
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition cursor-pointer active:scale-95"
+          onClick={handleOpenNewClientModal}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition cursor-pointer"
         >
           <Plus className="w-4 h-4" /> Novo Cliente
         </button>
       </header>
 
-      {/* Conteúdo */}
+      {/* Lista de Clientes */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
         {loading ? (
           <p className="text-slate-400 text-center py-10">Carregando clientes...</p>
         ) : clients.length === 0 ? (
           <div className="text-center py-16 bg-slate-800/50 rounded-2xl border border-slate-700">
-            <User className="w-12 h-12 text-slate-500 mx-auto mb-3" />
             <h3 className="text-lg font-medium text-slate-300">Nenhum cliente cadastrado</h3>
-            <p className="text-slate-500 text-sm mt-1">Clique em "Novo Cliente" para adicionar o primeiro.</p>
+            <p className="text-slate-500 text-sm mt-1">Clique em "Novo Cliente" para começar.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {clients.map((c) => (
-              <div key={c.id} className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-lg text-white">{c.name}</h3>
-                    {c.phone && (
-                      <span className="text-xs text-slate-400 flex items-center gap-1">
-                        <Phone className="w-3 h-3" /> {c.phone}
-                      </span>
-                    )}
-                  </div>
+          <div className="space-y-4">
+            {clients.map((client) => {
+              const isExpanded = expandedClientId === client.id
+              const propertyCount = client.properties?.length || 0
 
-                  <div className="text-xs text-slate-300 space-y-1">
-                    <p className="flex items-start gap-1.5 text-slate-400">
-                      <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>{c.address}</span>
-                    </p>
-                    {c.gate_code && (
-                      <p className="flex items-center gap-1.5 text-slate-400">
-                        <Key className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>Gate/Portão: <strong className="text-slate-200">{c.gate_code}</strong></span>
+              return (
+                <div key={client.id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  {/* Cabeçalho do Card do Cliente */}
+                  <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/80">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-white text-lg">{client.name}</span>
+                        {propertyCount > 0 && (
+                          <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <Home className="w-3 h-3" /> {propertyCount} {propertyCount === 1 ? 'Unidade' : 'Unidades'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500" /> {client.address || 'Endereço principal não informado'}
                       </p>
-                    )}
+                    </div>
+
+                    {/* Preços e Ações */}
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <div className="flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700">
+                        <DollarSign className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Standard</span>
+                          <span className="font-semibold text-emerald-400">${client.price_standard}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleOpenAddPropertyModal(client.id)}
+                        className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Unidade
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenEditClientModal(client)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition cursor-pointer"
+                        title="Editar Cliente"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteClient(client.id)}
+                        className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition cursor-pointer"
+                        title="Excluir Cliente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+
+                      {propertyCount > 0 && (
+                        <button
+                          onClick={() => toggleExpand(client.id)}
+                          className="p-1.5 text-slate-400 hover:text-white bg-slate-700/50 rounded transition cursor-pointer"
+                          title="Ver Unidades"
+                        >
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Preços por Modalidade */}
-                  <div className="pt-2 border-t border-slate-700/60 grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="bg-slate-900/60 p-2 rounded-lg">
-                      <span className="block text-slate-500 text-[10px]">Standard</span>
-                      <strong className="text-emerald-400">${c.price_standard}</strong>
+                  {/* Agrupamento de Unidades / Imóveis Expandível */}
+                  {isExpanded && propertyCount > 0 && (
+                    <div className="bg-slate-900/50 p-4 border-t border-slate-700 space-y-2">
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {client.properties?.map((prop) => (
+                          <div
+                            key={prop.id}
+                            className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
+                          >
+                            <div>
+                              <span className="font-semibold text-white block">{prop.name}</span>
+                              <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-500" /> {prop.address}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteProperty(prop.id)}
+                              className="text-slate-500 hover:text-red-400 p-1 rounded transition"
+                              title="Remover Unidade"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="bg-slate-900/60 p-2 rounded-lg">
-                      <span className="block text-slate-500 text-[10px]">Pesada</span>
-                      <strong className="text-emerald-400">${c.price_heavy}</strong>
-                    </div>
-                    <div className="bg-slate-900/60 p-2 rounded-lg">
-                      <span className="block text-slate-500 text-[10px]">Move-In/Out</span>
-                      <strong className="text-emerald-400">${c.price_move_in_out}</strong>
-                    </div>
-                  </div>
-
-                  {c.notes && (
-                    <p className="text-xs text-slate-400 bg-slate-900/40 p-2 rounded border border-slate-700/40 italic">
-                      "{c.notes}"
-                    </p>
                   )}
                 </div>
-
-                {/* Botões de Ação */}
-                <div className="pt-3 border-t border-slate-700/60 flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditModal(c)}
-                    className="p-2 text-slate-400 hover:text-white active:text-white hover:bg-slate-700 active:bg-slate-600 rounded-lg transition cursor-pointer"
-                    title="Editar Cliente"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteClient(c.id)}
-                    className="p-2 text-slate-400 hover:text-red-400 active:text-red-400 hover:bg-red-500/10 active:bg-red-500/20 rounded-lg transition cursor-pointer"
-                    title="Excluir Cliente"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </main>
 
-      {/* Modal de Novo Cliente */}
-      {showModal && (
+      {/* Modal Criar/Editar Cliente */}
+      {showClientModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700 shadow-2xl max-h-[90vh] overflow-y-auto relative">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h2 className="text-lg font-bold mb-4 text-white">Cadastrar Novo Cliente</h2>
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-4 text-white">
+              {editingClientId ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
             <form onSubmit={handleSaveClient} className="space-y-4">
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Nome do Cliente *</label>
@@ -285,121 +344,102 @@ export default function ClientsPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: John Smith"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                  placeholder="Ex: John Doe"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Telefone</label>
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(555) 000-0000"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Gate Code / Senha</label>
-                  <input
-                    type="text"
-                    value={gateCode}
-                    onChange={(e) => setGateCode(e.target.value)}
-                    placeholder="#1234"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Endereço Completo *</label>
+                <label className="block text-xs text-slate-400 mb-1">Endereço Principal</label>
                 <input
                   type="text"
-                  required
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="123 Main St, Orlando, FL"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                  placeholder="Ex: 123 Main St, Austin, TX"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              {/* Tabela de Preços do Cliente */}
-              <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-700/60 space-y-2">
-                <p className="text-xs font-semibold text-emerald-400">Preços Padrão do Cliente ($)</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Standard</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={priceStandard}
-                      onChange={(e) => setPriceStandard(e.target.value)}
-                      placeholder="150"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Pesada</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={priceHeavy}
-                      onChange={(e) => setPriceHeavy(e.target.value)}
-                      placeholder="220"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Move-In/Out</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={priceMove}
-                      onChange={(e) => setPriceMove(e.target.value)}
-                      placeholder="300"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Preço Standard ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceStandard}
+                    onChange={(e) => setPriceStandard(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Preço Pesada ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceHeavy}
+                    onChange={(e) => setPriceHeavy(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Preço Move-In/Out ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceMoveInOut}
+                    onChange={(e) => setPriceMoveInOut(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Preço Vacation/Airbnb ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceVacation}
+                    onChange={(e) => setPriceVacation(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Observações / Instruções da Casa</label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Cão no quintal, chave debaixo do tapete..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                />
-              </div>
-              
-               <div>
-                <label className="block text-xs text-slate-400 mb-1">Valor de Repasse ($)</label>
+                <label className="block text-xs text-slate-400 mb-1">Repasse Padrão Limpadora ($)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={cleanerPayout}
                   onChange={(e) => setCleanerPayout(e.target.value)}
-                  placeholder="Ex: 50.00"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Notas / Instruções do Cliente</label>
+                <textarea
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Obs: Possui cachorro, chave na caixa com código 1234..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition cursor-pointer"
+                  onClick={() => setShowClientModal(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
                 >
                   {saving ? 'Salvando...' : 'Salvar Cliente'}
                 </button>
@@ -409,135 +449,52 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Modal de Editar Cliente */}
-      {editingClient && (
+      {/* Modal Adicionar Unidade / Imóvel */}
+      {showPropertyModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700 shadow-2xl max-h-[90vh] overflow-y-auto relative">
-            <button
-              onClick={() => setEditingClient(null)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h2 className="text-lg font-bold mb-4 text-white">Editar Cliente</h2>
-            <form onSubmit={handleUpdateClient} className="space-y-4">
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 shadow-2xl">
+            <h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2">
+              <Home className="w-5 h-5 text-indigo-400" /> Nova Unidade / Imóvel
+            </h2>
+            <form onSubmit={handleSaveProperty} className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Nome do Cliente *</label>
+                <label className="block text-xs text-slate-400 mb-1">Nome/Identificador da Unidade *</label>
                 <input
                   type="text"
                   required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                  value={propertyName}
+                  onChange={(e) => setPropertyName(e.target.value)}
+                  placeholder="Ex: Casa de Praia, Apt 302, Unidade B"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Telefone</label>
-                  <input
-                    type="text"
-                    value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Gate Code / Senha</label>
-                  <input
-                    type="text"
-                    value={editGateCode}
-                    onChange={(e) => setEditGateCode(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Endereço Completo *</label>
+                <label className="block text-xs text-slate-400 mb-1">Endereço da Unidade *</label>
                 <input
                   type="text"
                   required
-                  value={editAddress}
-                  onChange={(e) => setEditAddress(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                  value={propertyAddress}
+                  onChange={(e) => setPropertyAddress(e.target.value)}
+                  placeholder="Ex: 456 Ocean Dr, Suite 302"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              {/* Tabela de Preços do Cliente */}
-              <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-700/60 space-y-2">
-                <p className="text-xs font-semibold text-emerald-400">Preços Padrão do Cliente ($)</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Standard</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editPriceStandard}
-                      onChange={(e) => setEditPriceStandard(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Pesada</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editPriceHeavy}
-                      onChange={(e) => setEditPriceHeavy(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Move-In/Out</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editPriceMove}
-                      onChange={(e) => setEditPriceMove(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Observações / Instruções da Casa</label>
-                <textarea
-                  rows={2}
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Valor de Repasse ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editCleanerPayout}
-                  onChange={(e) => setEditCleanerPayout(e.target.value)}
-                  placeholder="Ex: 50.00"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                />
-              </div>
-              
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingClient(null)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition cursor-pointer"
+                  onClick={() => setShowPropertyModal(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={editSaving}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50"
+                  disabled={saving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
                 >
-                  {editSaving ? 'Salvando...' : 'Salvar Alterações'}
+                  {saving ? 'Adicionando...' : 'Adicionar Unidade'}
                 </button>
               </div>
             </form>
