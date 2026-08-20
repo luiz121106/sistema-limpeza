@@ -42,6 +42,10 @@ interface Job {
   } | null
 }
 
+const getTodayUS = () => {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })
+}
+
 export default function SchedulePage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -53,7 +57,7 @@ export default function SchedulePage() {
   // Form states
   const [clientId, setClientId] = useState('')
   const [cleanerId, setCleanerId] = useState('')
-  const [scheduledDate, setScheduledDate] = useState('')
+  const [scheduledDate, setScheduledDate] = useState(getTodayUS())
   const [scheduledTime, setScheduledTime] = useState('08:00')
   const [serviceType, setServiceType] = useState('Standard')
   const [price, setPrice] = useState('')
@@ -75,7 +79,8 @@ export default function SchedulePage() {
     if (cleanersData) setCleaners(cleanersData)
 
     // Buscar Agendamentos
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+const cutoff = yesterday.toISOString()
 
     const { data: jobsData } = await supabase
       .from('jobs')
@@ -99,6 +104,12 @@ export default function SchedulePage() {
       if (serviceType === 'Standard') setPrice(selected.price_standard.toString())
       if (serviceType === 'Pesada') setPrice(selected.price_heavy.toString())
       if (serviceType === 'Move-In/Out') setPrice(selected.price_move_in_out.toString())
+
+      // Puxa a observação fixa cadastrada no cliente (se houver)
+      if ((selected as any).notes) setNotes((selected as any).notes)
+      
+      // Puxa o repasse padrão do cliente (se houver)
+      if (selected.cleaner_payout) setPayout(selected.cleaner_payout)
     }
   }
 
