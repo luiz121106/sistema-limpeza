@@ -18,6 +18,10 @@ export async function GET() {
   }
   const resend = new Resend(apiKey)
 
+  // Configurações do OneSignal com fallbacks das suas chaves
+  const oneSignalApiKey = process.env.ONESIGNAL_REST_API_KEY || 'os_v2_app_jd7u57sgs5ffreqjtdhrmijficvgddifpshu32f2oraisyxjw6chyfp2r2kt4h75piptjicgdquijo543kjgkvqnxe3qozcdwzhbsay'
+  const oneSignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || '48ff4efe-4697-4a58-9209-98cf16212540'
+
   // Datas no fuso horário de Santa Rosa Beach (Central Time)
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })
   
@@ -38,11 +42,12 @@ export async function GET() {
 
   const FROM_EMAIL = 'Gestão BC <onboarding@resend.dev>'
 
-  // 2. Dispara e-mail para cada limpadora
+  // 2. Dispara e-mail e notificação push no celular para cada agendamento
   for (const job of jobs as any[]) {
     const isToday = job.scheduled_date === today
     const whenText = isToday ? 'HOJE' : 'AMANHÃ'
 
+    // Envio de E-mail via Resend
     if (job.cleaners?.email) {
       await resend.emails.send({
         from: FROM_EMAIL,
@@ -59,6 +64,28 @@ export async function GET() {
           </div>
         `
       })
+    }
+
+    // Envio de Notificação Push via OneSignal
+    if (oneSignalApiKey) {
+      try {
+        await fetch('https://onesignal.com/api/v1/notifications', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${oneSignalApiKey}`
+          },
+          body: JSON.stringify({
+            app_id: oneSignalAppId,
+            included_segments: ['Subscribed Users'],
+            headings: { en: `⏰ Lembrete de Limpeza ${whenText}` },
+            contents: { en: `${job.clients?.name || 'Cliente'} - ${job.scheduled_time}` },
+            url: 'https://sistema-limpeza-chi.vercel.app/limpador'
+          })
+        })
+      } catch (pushErr) {
+        console.error('Erro ao disparar push no OneSignal:', pushErr)
+      }
     }
   }
 
