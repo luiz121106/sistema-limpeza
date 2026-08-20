@@ -12,11 +12,13 @@ interface Client {
   price_standard: number
   price_heavy: number
   price_move_in_out: number
+  cleaner_payout?: number
 }
 
 interface Cleaner {
   id: string
   name: string
+  email?: string
 }
 
 interface Job {
@@ -56,6 +58,8 @@ export default function SchedulePage() {
   const [serviceType, setServiceType] = useState('Standard')
   const [price, setPrice] = useState('')
   const [extraPrice, setExtraPrice] = useState('0')
+  const [payout, setPayout] = useState<number | string>('')
+  const [extraPayout, setExtraPayout] = useState<number | string>('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -66,20 +70,20 @@ export default function SchedulePage() {
     const { data: clientsData } = await supabase.from('clients').select('*').order('name')
     if (clientsData) setClients(clientsData)
 
-    // Buscar Limpadores Ativos
-    const { data: cleanersData } = await supabase.from('cleaners').select('id, name').eq('active', true).order('name')
+    // Buscar Limpadores Ativos (incluindo e-mail para notificacoes)
+    const { data: cleanersData } = await supabase.from('cleaners').select('id, name, email').eq('active', true).order('name')
     if (cleanersData) setCleaners(cleanersData)
 
- // Buscar Agendamentos
-const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    // Buscar Agendamentos
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-const { data: jobsData } = await supabase
-  .from('jobs')
-  .select('*, clients(name, address), cleaners(name)')
-  .or(`status.neq.completed,completed_at.gt.${cutoff}`)
-  .order('scheduled_date', { ascending: true })
+    const { data: jobsData } = await supabase
+      .from('jobs')
+      .select('*, clients(name, address), cleaners(name)')
+      .or(`status.neq.completed,completed_at.gt.${cutoff}`)
+      .order('scheduled_date', { ascending: true })
 
-if (jobsData) setJobs(jobsData as any)
+    if (jobsData) setJobs(jobsData as any)
     
     setLoading(false)
   }
@@ -146,6 +150,8 @@ if (jobsData) setJobs(jobsData as any)
       service_type: serviceType,
       price: parseFloat(price) || 0,
       extra_price: parseFloat(extraPrice) || 0,
+      payout: parseFloat(String(payout)) || 0,
+      extra_payout: parseFloat(String(extraPayout)) || 0,
       notes: notes || null,
     }
 
@@ -165,6 +171,28 @@ if (jobsData) setJobs(jobsData as any)
     }
 
     if (!error) {
+      // Disparo do e-mail ao criar novo agendamento com limpador selecionado
+      if (!editingJobId && cleanerId) {
+        const selectedCleaner = cleaners.find((c) => c.id === cleanerId)
+        const selectedClient = clients.find((c) => c.id === clientId)
+
+        if (selectedCleaner?.email) {
+          fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cleanerEmail: selectedCleaner.email,
+              cleanerName: selectedCleaner.name,
+              clientName: selectedClient?.name || 'Cliente',
+              date: scheduledDate,
+              time: scheduledTime,
+              address: selectedClient?.address || '',
+              payout: selectedClient?.cleaner_payout || 0,
+            }),
+          }).catch((err) => console.error('Erro ao enviar e-mail:', err))
+        }
+      }
+
       setShowModal(false)
       fetchData()
     } else {
@@ -363,6 +391,32 @@ if (jobsData) setJobs(jobsData as any)
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Repasse Base Limpadora ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={payout}
+                  onChange={(e) => setPayout(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Extra Limpadora ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={extraPayout}
+                  onChange={(e) => setExtraPayout(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                />
+              </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

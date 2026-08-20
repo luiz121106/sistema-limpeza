@@ -31,6 +31,7 @@ export default function ClientsPage() {
   const [priceHeavy, setPriceHeavy] = useState('')
   const [priceMove, setPriceMove] = useState('')
   const [notes, setNotes] = useState('')
+  const [cleanerPayout, setCleanerPayout] = useState('');
   const [saving, setSaving] = useState(false)
 
   // Formulário Edição
@@ -43,6 +44,7 @@ export default function ClientsPage() {
   const [editPriceHeavy, setEditPriceHeavy] = useState('')
   const [editPriceMove, setEditPriceMove] = useState('')
   const [editNotes, setEditNotes] = useState('')
+  const [editCleanerPayout, setEditCleanerPayout] = useState('');
   const [editSaving, setEditSaving] = useState(false)
 
   const fetchClients = async () => {
@@ -76,6 +78,7 @@ export default function ClientsPage() {
         price_heavy: parseFloat(priceHeavy) || 0,
         price_move_in_out: parseFloat(priceMove) || 0,
         notes: notes || null,
+        cleaner_payout: parseFloat(cleanerPayout) || 0,
       },
     ])
 
@@ -89,6 +92,7 @@ export default function ClientsPage() {
       setPriceHeavy('')
       setPriceMove('')
       setNotes('')
+      setCleanerPayout('');
       fetchClients()
     } else {
       alert('Erro ao salvar cliente: ' + error.message)
@@ -107,6 +111,7 @@ export default function ClientsPage() {
     setEditPriceHeavy(client.price_heavy.toString())
     setEditPriceMove(client.price_move_in_out.toString())
     setEditNotes(client.notes || '')
+    setEditCleanerPayout((client as any).cleaner_payout ? String((client as any).cleaner_payout) : '');
   }
 
   // Atualizar Cliente
@@ -127,6 +132,7 @@ export default function ClientsPage() {
         price_heavy: parseFloat(editPriceHeavy) || 0,
         price_move_in_out: parseFloat(editPriceMove) || 0,
         notes: editNotes || null,
+        cleaner_payout: parseFloat(editCleanerPayout) || 0,
       })
       .eq('id', editingClient.id)
 
@@ -369,6 +375,18 @@ export default function ClientsPage() {
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
                 />
               </div>
+              
+               <div>
+                <label className="block text-xs text-slate-400 mb-1">Valor de Repasse ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={cleanerPayout}
+                  onChange={(e) => setCleanerPayout(e.target.value)}
+                  placeholder="Ex: 50.00"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                />
+              </div>
 
               <div className="flex gap-2 justify-end pt-2">
                 <button
@@ -494,6 +512,18 @@ export default function ClientsPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Valor de Repasse ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editCleanerPayout}
+                  onChange={(e) => setEditCleanerPayout(e.target.value)}
+                  placeholder="Ex: 50.00"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                />
+              </div>
+              
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck } from 'lucide-react'
+import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DashboardPage() {
@@ -40,24 +40,24 @@ export default function DashboardPage() {
         .eq('scheduled_date', today)
       setTodayJobsCount(todayJobs || 0)
 
-// 4. Faturamento Mensal (Reseta no 1º dia de cada mês)
-const now = new Date()
-const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      // 4. Faturamento Mensal (Reseta no 1º dia de cada mês)
+      const now = new Date()
+      const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-const { data: completedJobs } = await supabase
-  .from('jobs')
-  .select('price, extra_price')
-  .eq('status', 'completed')
-  .gte('scheduled_date', firstDayOfMonth)
+      const { data: completedJobs } = await supabase
+        .from('jobs')
+        .select('price, extra_price')
+        .eq('status', 'completed')
+        .gte('scheduled_date', firstDayOfMonth)
 
-if (completedJobs) {
-  const total = completedJobs.reduce((sum, item) => {
-    const base = Number(item.price || 0)
-    const extra = Number(item.extra_price || 0)
-    return sum + base + extra
-  }, 0)
-  setWeeklyRevenue(total)
-}
+      if (completedJobs) {
+        const total = completedJobs.reduce((sum, item) => {
+          const base = Number(item.price || 0)
+          const extra = Number(item.extra_price || 0)
+          return sum + base + extra
+        }, 0)
+        setWeeklyRevenue(total)
+      }
 
       setLoading(false)
     }
@@ -145,10 +145,10 @@ if (completedJobs) {
           </Link>
         </div>
 
-        {/* Menu de Atalhos */}
+        {/* Menu de Atalhos (2 fileiras de 3 no notebook/desktop) */}
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
           <h2 className="text-lg font-semibold">Atalhos do Sistema</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <Link
               href="/dashboard/clientes"
               className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
@@ -196,8 +196,21 @@ if (completedJobs) {
                 <DollarSign className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-semibold text-slate-200 group-hover:text-purple-400 transition">Financeiro</h3>
+                <h3 className="font-semibold text-slate-200 group-hover:text-purple-400 transition">Financeiro Geral</h3>
                 <p className="text-xs text-slate-400">Faturamento, recebíveis e pagamentos.</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/dashboard/financeiro-limpadores"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+            >
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-300 rounded-lg group-hover:scale-105 transition">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-200 group-hover:text-emerald-300 transition">Repasse Limpadores</h3>
+                <p className="text-xs text-slate-400">Fechamento quinzenal de repasses da equipe.</p>
               </div>
             </Link>
 
