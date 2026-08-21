@@ -21,6 +21,11 @@ interface Property {
   client_id: string
   name: string
   address: string
+  price_standard?: number
+  price_heavy?: number
+  price_move_in_out?: number
+  price_vacation?: number
+  cleaner_payout?: number
 }
 
 interface Cleaner {
@@ -87,7 +92,6 @@ const getTodayUS = () => {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })
 }
 
-// Função auxiliar para calcular datas recorrentes
 const generateRecurringDates = (startDateStr: string, frequency: string, untilDateStr: string): string[] => {
   const dates: string[] = []
   let current = new Date(startDateStr + 'T00:00:00')
@@ -122,6 +126,7 @@ export default function SchedulePage() {
   // Form states
   const [clientId, setClientId] = useState('')
   const [propertyId, setPropertyId] = useState('')
+  const [unitDetails, setUnitDetails] = useState('') // Novo campo para texto livre
   const [cleanerId, setCleanerId] = useState('')
   const [scheduledDate, setScheduledDate] = useState(getTodayUS())
   const [scheduledTime, setScheduledTime] = useState('08:00')
@@ -142,19 +147,15 @@ export default function SchedulePage() {
   const fetchData = async () => {
     setLoading(true)
 
-    // Buscar Clientes
     const { data: clientsData } = await supabase.from('clients').select('*').order('name')
     if (clientsData) setClients(clientsData)
 
-    // Buscar Propriedades / Unidades
     const { data: propertiesData } = await supabase.from('properties').select('*').order('name')
     if (propertiesData) setProperties(propertiesData)
 
-    // Buscar Limpadores Ativos
     const { data: cleanersData } = await supabase.from('cleaners').select('id, name, email').eq('active', true).order('name')
     if (cleanersData) setCleaners(cleanersData)
 
-    // Buscar Agendamentos
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
     const cutoff = yesterday.toISOString()
 
@@ -175,37 +176,55 @@ export default function SchedulePage() {
 
   const availableProperties = properties.filter((p) => p.client_id === clientId)
 
+  const updatePricing = (targetServiceType: string, targetPropertyId: string, targetClientId: string) => {
+    if (editingJobId) return
+
+    const selectedProperty = properties.find((p) => p.id === targetPropertyId)
+    const selectedClient = clients.find((c) => c.id === targetClientId)
+
+    const source = selectedProperty || selectedClient
+    if (!source) return
+
+    let basePrice = 0
+    if (targetServiceType === 'Standard') basePrice = source.price_standard || 0
+    if (targetServiceType === 'Pesada') basePrice = source.price_heavy || 0
+    if (targetServiceType === 'Move-In/Out') basePrice = source.price_move_in_out || 0
+    if (targetServiceType === 'Vacation') basePrice = source.price_vacation || source.price_standard || 0
+
+    setPrice(basePrice.toString())
+
+    if (source.cleaner_payout !== undefined && source.cleaner_payout !== null) {
+      setPayout(source.cleaner_payout)
+    }
+  }
+
   const handleClientChange = (id: string) => {
     setClientId(id)
     setPropertyId('')
+    setUnitDetails('')
 
     const selected = clients.find((c) => c.id === id)
     if (selected && !editingJobId) {
-      if (serviceType === 'Standard') setPrice(selected.price_standard.toString())
-      if (serviceType === 'Pesada') setPrice(selected.price_heavy.toString())
-      if (serviceType === 'Move-In/Out') setPrice(selected.price_move_in_out.toString())
-      if (serviceType === 'Vacation') setPrice((selected.price_vacation || selected.price_standard).toString())
-
+      updatePricing(serviceType, '', id)
       if ((selected as any).notes) setNotes((selected as any).notes)
-      if (selected.cleaner_payout) setPayout(selected.cleaner_payout)
     }
+  }
+
+  const handlePropertyChange = (propId: string) => {
+    setPropertyId(propId)
+    updatePricing(serviceType, propId, clientId)
   }
 
   const handleServiceTypeChange = (type: string) => {
     setServiceType(type)
-    const selected = clients.find((c) => c.id === clientId)
-    if (selected && !editingJobId) {
-      if (type === 'Standard') setPrice(selected.price_standard.toString())
-      if (type === 'Pesada') setPrice(selected.price_heavy.toString())
-      if (type === 'Move-In/Out') setPrice(selected.price_move_in_out.toString())
-      if (type === 'Vacation') setPrice((selected.price_vacation || selected.price_standard).toString())
-    }
+    updatePricing(type, propertyId, clientId)
   }
 
   const handleOpenNewModal = () => {
     setEditingJobId(null)
     setClientId('')
     setPropertyId('')
+    setUnitDetails('')
     setCleanerId('')
     setScheduledDate(getTodayUS())
     setScheduledTime('08:00')
@@ -225,6 +244,7 @@ export default function SchedulePage() {
     setEditingJobId(job.id)
     setClientId(job.client_id)
     setPropertyId(job.property_id || '')
+    setUnitDetails('')
     setCleanerId(job.cleaner_id || '')
     setScheduledDate(job.scheduled_date)
     setScheduledTime(job.scheduled_time)
@@ -244,6 +264,7 @@ export default function SchedulePage() {
     setEditingJobId(null)
     setClientId(job.client_id)
     setPropertyId(job.property_id || '')
+    setUnitDetails('')
     setCleanerId(job.cleaner_id || '')
     setScheduledDate('')
     setScheduledTime(job.scheduled_time)
@@ -263,6 +284,12 @@ export default function SchedulePage() {
     e.preventDefault()
     setSaving(true)
 
+    // Junta as especificações da unidade no campo de observações se preenchido
+    let finalNotes = notes
+    if (unitDetails.trim()) {
+      finalNotes = `[Unidade/Especificação: ${unitDetails.trim()}] ${notes}`.trim()
+    }
+
     const basePayload = {
       client_id: clientId,
       property_id: propertyId || null,
@@ -273,7 +300,7 @@ export default function SchedulePage() {
       extra_price: parseFloat(extraPrice) || 0,
       payout: parseFloat(String(payout)) || 0,
       extra_payout: parseFloat(String(extraPayout)) || 0,
-      notes: notes || null,
+      notes: finalNotes || null,
       is_recurring: isRecurring,
       recurrence_frequency: isRecurring ? recurrenceFrequency : null,
       recurrence_until: isRecurring ? recurrenceUntil : null,
@@ -288,7 +315,6 @@ export default function SchedulePage() {
         .eq('id', editingJobId)
       error = updateError
     } else {
-      // Se for recorrente e tiver data limite definida, insere múltiplos agendamentos
       if (isRecurring && recurrenceUntil && recurrenceUntil >= scheduledDate) {
         const dates = generateRecurringDates(scheduledDate, recurrenceFrequency, recurrenceUntil)
         const jobsToInsert = dates.map((date) => ({
@@ -300,7 +326,6 @@ export default function SchedulePage() {
         const { error: batchError } = await supabase.from('jobs').insert(jobsToInsert)
         error = batchError
       } else {
-        // Inserção simples
         const { error: insertError } = await supabase
           .from('jobs')
           .insert([{ ...basePayload, scheduled_date: scheduledDate, status: 'pending' }])
@@ -325,7 +350,7 @@ export default function SchedulePage() {
               date: scheduledDate,
               time: scheduledTime,
               address: selectedProperty?.address || selectedClient?.address || '',
-              payout: selectedClient?.cleaner_payout || 0,
+              payout: selectedProperty?.cleaner_payout || selectedClient?.cleaner_payout || 0,
             }),
           }).catch((err) => console.error('Erro ao enviar e-mail:', err))
         }
@@ -416,7 +441,7 @@ export default function SchedulePage() {
                         {style.label}
                       </span>
 
-                      {/* Unidade / Imóvel */}
+                      {/* Unidade / Imóvel Cadastrado */}
                       {job.properties?.name && (
                         <span className="text-xs bg-slate-700/80 text-slate-300 border border-slate-600 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
                           <Home className="w-3 h-3 text-slate-400" /> {job.properties.name}
@@ -446,9 +471,9 @@ export default function SchedulePage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition underline decoration-slate-600 underline-offset-2 w-fit"
-                      >
-                     <MapPin className="w-3.5 h-3.5 text-slate-500" /> {addressDisplay}
-                      </a>
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-slate-500" /> {addressDisplay}
+                    </a>
 
                     {job.notes && (
                       <p className="text-xs text-slate-400 italic bg-slate-900/40 p-1.5 rounded mt-1">
@@ -559,19 +584,35 @@ export default function SchedulePage() {
                 </select>
               </div>
 
-              {clientId && availableProperties.length > 0 && (
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Selecione a Unidade / Imóvel</label>
-                  <select
-                    value={propertyId}
-                    onChange={(e) => setPropertyId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                  >
-                    <option value="">Principal / Padrão</option>
-                    {availableProperties.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name} - {p.address}</option>
-                    ))}
-                  </select>
+              {/* Seletor de Unidades Cadastradas ou Campo de Texto Livre */}
+              {clientId && (
+                <div className="space-y-3">
+                  {availableProperties.length > 0 && (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Unidade Cadastrada (Imóvel)</label>
+                      <select
+                        value={propertyId}
+                        onChange={(e) => handlePropertyChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                      >
+                        <option value="">Endereço Principal / Padrão</option>
+                        {availableProperties.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name} - {p.address}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Unidade / Bloco / Apto / Área Especifica</label>
+                    <input
+                      type="text"
+                      value={unitDetails}
+                      onChange={(e) => setUnitDetails(e.target.value)}
+                      placeholder="Ex: Apt 302, Bloco B, Área Externa, Casa Principal..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                    />
+                  </div>
                 </div>
               )}
 
