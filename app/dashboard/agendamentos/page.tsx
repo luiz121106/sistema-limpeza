@@ -584,38 +584,45 @@ export default function SchedulePage() {
                 </select>
               </div>
 
-              {/* Seletor de Unidades Cadastradas ou Campo de Texto Livre */}
-              {clientId && (
-                <div className="space-y-3">
-                  {availableProperties.length > 0 && (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Unidade Cadastrada (Imóvel)</label>
-                      <select
-                        value={propertyId}
-                        onChange={(e) => handlePropertyChange(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                      >
-                        <option value="">Endereço Principal / Padrão</option>
-                        {availableProperties.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name} - {p.address}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+              {/* Seletor de Unidades Cadastradas do Cliente */}
+{clientId && (
+  <div className="space-y-3">
+    {availableProperties.length > 0 ? (
+      <div>
+        <label className="block text-xs text-emerald-400 mb-1 font-semibold">
+          Selecione a Unidade / Imóvel de Vacation *
+        </label>
+        <select
+          value={propertyId}
+          onChange={(e) => handlePropertyChange(e.target.value)}
+          className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white font-medium"
+        >
+          <option value="">Selecione uma unidade do cliente...</option>
+          {availableProperties.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} — {p.address}
+            </option>
+          ))}
+        </select>
+      </div>
+    ) : (
+      <p className="text-xs text-slate-400 italic">
+        Este cliente não possui unidades cadastradas (será usado o endereço padrão).
+      </p>
+    )}
 
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Unidade / Bloco / Apto / Área Especifica</label>
-                    <input
-                      type="text"
-                      value={unitDetails}
-                      onChange={(e) => setUnitDetails(e.target.value)}
-                      placeholder="Ex: Apt 302, Bloco B, Área Externa, Casa Principal..."
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
+    <div>
+      <label className="block text-xs text-slate-400 mb-1">Especificação Extra (Ex: Apto / Bloco / Área)</label>
+      <input
+        type="text"
+        value={unitDetails}
+        onChange={(e) => setUnitDetails(e.target.value)}
+        placeholder="Ex: Apt 302, Bloco B, Área Externa..."
+        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+      />
+    </div>
+  </div>
+)}
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Selecione o(a) Limpador(a) / Responsável</label>
                 <select

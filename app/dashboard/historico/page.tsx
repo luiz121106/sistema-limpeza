@@ -11,6 +11,7 @@ import {
   Loader2,
   Filter,
   DollarSign,
+  Copy,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -24,6 +25,9 @@ interface HistoryJob {
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
   payment_status: 'a_receber' | 'pago' | null
   client_id: string
+  cleaner_id?: string | null
+  cleaner_payout?: number | string | null
+  notes?: string | null
   clients: { name: string; address: string } | null
   cleaners: { name: string } | null
   cleaner_name: string | null
@@ -40,6 +44,7 @@ const statusLabel: Record<HistoryJob['status'], string> = {
   completed: 'Concluída',
   cancelled: 'Cancelada',
 }
+
 const statusStyle: Record<HistoryJob['status'], string> = {
   pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
   in_progress: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -51,7 +56,8 @@ export default function HistoricoPage() {
   const [jobs, setJobs] = useState<HistoryJob[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedMonth, setSelectedMonth] = useState<string>('all') // 'YYYY-MM' ou 'all'
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedClient, setSelectedClient] = useState<string>('all')
 
   const loadAll = useCallback(async () => {
@@ -60,9 +66,7 @@ export default function HistoricoPage() {
     const [{ data: jobsData }, { data: clientsData }] = await Promise.all([
       supabase
         .from('jobs')
-        .select(
-          '*, clients(name, address), cleaners(name)'
-        )
+        .select('*, clients(name, address), cleaners(name)')
         .order('scheduled_date', { ascending: false })
         .order('scheduled_time', { ascending: false }),
       supabase.from('clients').select('id, name').order('name'),
@@ -76,6 +80,41 @@ export default function HistoricoPage() {
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  const handleDuplicateJob = async (job: HistoryJob) => {
+    const clientName = job.clients?.name || 'Cliente'
+    if (!confirm(`Duplicar a limpeza de "${clientName}" e enviar para os novos Agendamentos?`)) return
+
+    setDuplicatingId(job.id)
+
+    const today = new Date().toISOString().split('T')[0]
+
+    const payload = {
+      client_id: job.client_id ?? null,
+      cleaner_id: job.cleaner_id ?? null,
+      cleaner_name: job.cleaner_name ?? null,
+      service_type: job.service_type ?? '',
+      scheduled_date: today,
+      scheduled_time: job.scheduled_time ?? '08:00',
+      price: job.price ?? 0,
+      extra_price: job.extra_price ?? 0,
+      cleaner_payout: job.cleaner_payout ?? 0,
+      notes: job.notes ?? null,
+      status: 'pending',
+      payment_status: 'a_receber',
+    }
+
+    const { error } = await supabase.from('jobs').insert([payload])
+
+    if (error) {
+      alert('Erro ao duplicar agendamento: ' + error.message)
+    } else {
+      alert('Limpeza duplicada com sucesso! Ela já está disponível na lista de Agendamentos.')
+      loadAll()
+    }
+
+    setDuplicatingId(null)
+  }
 
   const availableMonths = useMemo(() => {
     const set = new Set(jobs.map((j) => j.scheduled_date.slice(0, 7)))
@@ -160,6 +199,8 @@ export default function HistoricoPage() {
           {filteredJobs.map((j) => {
             const total = Number(j.price || 0) + Number(j.extra_price || 0)
             const cleanerName = j.cleaners?.name || j.cleaner_name
+            const isDuplicating = duplicatingId === j.id
+
             return (
               <div
                 key={j.id}
@@ -200,19 +241,35 @@ export default function HistoricoPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-4 text-xs text-slate-300">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-emerald-400" />
-                    {new Date(`${j.scheduled_date}T00:00:00`).toLocaleDateString('pt-BR')}
+                <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 text-xs text-slate-300">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-emerald-400" />
+                      {new Date(`${j.scheduled_date}T00:00:00`).toLocaleDateString('pt-BR')}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      {j.scheduled_time}
+                    </div>
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+                      <DollarSign className="w-3.5 h-3.5" />
+                      {total.toFixed(2)}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-amber-400" />
-                    {j.scheduled_time}
-                  </div>
-                  <div className="flex items-center gap-1.5 font-bold text-emerald-400">
-                    <DollarSign className="w-3.5 h-3.5" />
-                    {total.toFixed(2)}
-                  </div>
+
+                  <button
+                    onClick={() => handleDuplicateJob(j)}
+                    disabled={isDuplicating}
+                    className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1.5 font-medium transition cursor-pointer disabled:opacity-50"
+                    title="Duplicar esta limpeza para Agendamentos"
+                  >
+                    {isDuplicating ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isDuplicating ? 'Duplicando...' : 'Duplicar'}</span>
+                  </button>
                 </div>
               </div>
             )

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Mail, Shield, UserCheck } from 'lucide-react'
+import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Mail, Shield } from 'lucide-react'
 import Link from 'next/link'
 
 interface Property {
@@ -11,8 +11,8 @@ interface Property {
   name: string
   address: string
   property_type: string
-  default_price: number
-  default_payout: number
+  price_standard: number
+  cleaner_payout: number
 }
 
 interface Contact {
@@ -68,6 +68,7 @@ export default function ClientsPage() {
 
   // Modal Unidade / Imóvel
   const [showPropertyModal, setShowPropertyModal] = useState(false)
+  const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null)
   const [selectedClientIdForProperty, setSelectedClientIdForProperty] = useState<string | null>(null)
   const [propertyName, setPropertyName] = useState('')
   const [propertyAddress, setPropertyAddress] = useState('')
@@ -223,6 +224,7 @@ export default function ClientsPage() {
   // --- Ações de Unidade / Imóvel ---
   const handleOpenAddPropertyModal = (clientId: string) => {
     setSelectedClientIdForProperty(clientId)
+    setEditingPropertyId(null)
     setPropertyName('')
     setPropertyAddress('')
     setPropertyType('1x1')
@@ -231,27 +233,52 @@ export default function ClientsPage() {
     setShowPropertyModal(true)
   }
 
+  const handleOpenEditPropertyModal = (property: Property) => {
+    setSelectedClientIdForProperty(property.client_id)
+    setEditingPropertyId(property.id)
+    setPropertyName(property.name)
+    setPropertyAddress(property.address || '')
+    setPropertyType(property.property_type || '1x1')
+    setPropertyDefaultPrice(property.price_standard?.toString() || '0')
+    setPropertyDefaultPayout(property.cleaner_payout?.toString() || '0')
+    setShowPropertyModal(true)
+  }
+
   const handleSaveProperty = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedClientIdForProperty) return
     setSaving(true)
 
-    const { error } = await supabase.from('properties').insert([
-      {
-        client_id: selectedClientIdForProperty,
-        name: propertyName,
-        address: propertyAddress,
-        property_type: propertyType,
-        default_price: parseFloat(propertyDefaultPrice) || 0,
-        default_payout: parseFloat(propertyDefaultPayout) || 0,
-      },
-    ])
+    const payload: Record<string, any> = {
+      client_id: selectedClientIdForProperty,
+      name: propertyName,
+      address: propertyAddress,
+    }
+
+    // Inclui colunas caso existam
+    if (propertyType) payload.property_type = propertyType
+    if (propertyDefaultPrice) payload.price_standard = parseFloat(propertyDefaultPrice) || 0
+    if (propertyDefaultPayout) payload.cleaner_payout = parseFloat(propertyDefaultPayout) || 0
+
+    let error
+    if (editingPropertyId) {
+      const { error: updateError } = await supabase
+        .from('properties')
+        .update(payload)
+        .eq('id', editingPropertyId)
+      error = updateError
+    } else {
+      const { error: insertError } = await supabase
+        .from('properties')
+        .insert([payload])
+      error = insertError
+    }
 
     if (!error) {
       setShowPropertyModal(false)
       fetchClientsAndProperties()
     } else {
-      alert('Erro ao adicionar unidade: ' + error.message)
+      alert('Erro ao salvar unidade: ' + error.message)
     }
     setSaving(false)
   }
@@ -323,7 +350,7 @@ export default function ClientsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-bold text-white text-lg">{client.name}</span>
                         {renderBadgeType(client.client_type)}
-                        {propertyCount > 0 && (
+                        {propertyCount > 0 && client.client_type !== 'complex' && (
                           <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                             <Home className="w-3 h-3" /> {propertyCount} {propertyCount === 1 ? 'Unidade' : 'Unidades'}
                           </span>
@@ -344,12 +371,14 @@ export default function ClientsPage() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleOpenAddPropertyModal(client.id)}
-                        className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Unidade
-                      </button>
+                      {client.client_type !== 'complex' && (
+                        <button
+                          onClick={() => handleOpenAddPropertyModal(client.id)}
+                          className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Unidade
+                        </button>
+                      )}
 
                       <button
                         onClick={() => handleOpenEditClientModal(client)}
@@ -378,13 +407,12 @@ export default function ClientsPage() {
                     </div>
                   </div>
 
-                  {/* Área Expandível: Unidades + Dados Privados da Administração */}
+                  {/* Área Expandível */}
                   {isExpanded && (
                     <div className="bg-slate-900/60 p-4 border-t border-slate-700 space-y-4">
                       
                       {/* Senhas e Contatos Confidenciais (Admin Only) */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/90 p-3.5 rounded-xl border border-amber-500/20">
-                        {/* Credenciais de Acesso */}
                         <div>
                           <h5 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 mb-2">
                             <Shield className="w-3.5 h-3.5" /> Senhas e Acessos (Privado Admin)
@@ -403,7 +431,6 @@ export default function ClientsPage() {
                           )}
                         </div>
 
-                        {/* Contatos Adicionais */}
                         <div>
                           <h5 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 mb-2">
                             <Phone className="w-3.5 h-3.5" /> Contatos Extras (Privado Admin)
@@ -422,7 +449,6 @@ export default function ClientsPage() {
                           )}
                         </div>
 
-                        {/* Anotações do Admin */}
                         {client.admin_notes && (
                           <div className="md:col-span-2 border-t border-slate-700/60 pt-2 mt-1">
                             <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Notas do Administrador:</span>
@@ -432,47 +458,61 @@ export default function ClientsPage() {
                       </div>
 
                       {/* Lista de Unidades */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                          <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
-                        </h4>
-                        {propertyCount === 0 ? (
-                          <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada. Clique no botão "+ Unidade" para adicionar.</p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {client.properties?.map((prop) => (
-                              <div
-                                key={prop.id}
-                                className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
-                              >
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-white">{prop.name}</span>
-                                    <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
-                                      {prop.property_type || '1x1'}
-                                    </span>
-                                  </div>
-                                  <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
-                                    <MapPin className="w-3 h-3 text-slate-500" /> {prop.address}
-                                  </span>
-                                  {(prop.default_price > 0 || prop.default_payout > 0) && (
-                                    <span className="text-[10px] text-emerald-400 font-medium block mt-1">
-                                      Cobrança: ${prop.default_price} | Repasse: ${prop.default_payout}
-                                    </span>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={() => handleDeleteProperty(prop.id)}
-                                  className="text-slate-500 hover:text-red-400 p-1 rounded transition"
-                                  title="Remover Unidade"
+                      {client.client_type !== 'complex' && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
+                          </h4>
+                          {propertyCount === 0 ? (
+                            <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada. Clique no botão "+ Unidade" para adicionar.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {client.properties?.map((prop) => (
+                                <div
+                                  key={prop.id}
+                                  className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-white">{prop.name}</span>
+                                      {prop.property_type && (
+                                        <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
+                                          {prop.property_type}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
+                                      <MapPin className="w-3 h-3 text-slate-500" /> {prop.address || 'Sem endereço registrado'}
+                                    </span>
+                                    {(prop.price_standard > 0 || prop.cleaner_payout > 0) && (
+                                      <span className="text-[10px] text-emerald-400 font-medium block mt-1">
+                                        Cobrança: ${prop.price_standard} | Repasse: ${prop.cleaner_payout}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => handleOpenEditPropertyModal(prop)}
+                                      className="text-slate-400 hover:text-indigo-400 p-1.5 rounded transition cursor-pointer"
+                                      title="Editar Unidade"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteProperty(prop.id)}
+                                      className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
+                                      title="Remover Unidade"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -490,7 +530,6 @@ export default function ClientsPage() {
               {editingClientId ? 'Editar Cliente' : 'Novo Cliente'}
             </h2>
             <form onSubmit={handleSaveClient} className="space-y-4">
-              {/* Nome e Categoria */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
                   <label className="block text-xs text-slate-400 mb-1">Nome do Cliente / Empresa *</label>
@@ -528,7 +567,6 @@ export default function ClientsPage() {
                 />
               </div>
 
-              {/* Tabela de Preços Padrão */}
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-slate-700/70 space-y-3">
                 <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Tabela de Preços Padrão ($)</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -587,11 +625,10 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              {/* Múltiplos Contatos Dinâmicos */}
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-slate-700/70 space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5" /> Contatos Extras (Telefones/Emails)
+                    <Phone className="w-3.5 h-3.5" /> Contatos Extras
                   </h4>
                   <button
                     type="button"
@@ -617,7 +654,7 @@ export default function ClientsPage() {
                       </select>
                       <input
                         type="text"
-                        placeholder="Rótulo (ex: Gerente, Financeiro)"
+                        placeholder="Rótulo (ex: Gerente)"
                         value={c.label}
                         onChange={(e) => handleUpdateContact(idx, 'label', e.target.value)}
                         className="w-1/3 bg-slate-900 border border-slate-700 text-xs rounded p-2 text-white"
@@ -641,18 +678,17 @@ export default function ClientsPage() {
                 )}
               </div>
 
-              {/* Múltiplas Credenciais de Acesso Privadas */}
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-amber-500/30 space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-                    <Key className="w-3.5 h-3.5" /> Senhas e Códigos de Acesso (Privado Admin)
+                    <Key className="w-3.5 h-3.5" /> Senhas e Códigos
                   </h4>
                   <button
                     type="button"
                     onClick={handleAddCredential}
                     className="text-xs bg-amber-600/30 text-amber-300 hover:bg-amber-600/50 px-2 py-1 rounded transition"
                   >
-                    + Adicionar Senha / Acesso
+                    + Adicionar Senha
                   </button>
                 </div>
 
@@ -663,14 +699,14 @@ export default function ClientsPage() {
                     <div key={idx} className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="Local/Rótulo (ex: Portão, Cofre, Wi-Fi)"
+                        placeholder="Rótulo (ex: Cofre, Wi-Fi)"
                         value={cred.label}
                         onChange={(e) => handleUpdateCredential(idx, 'label', e.target.value)}
                         className="w-1/2 bg-slate-900 border border-slate-700 text-xs rounded p-2 text-white"
                       />
                       <input
                         type="text"
-                        placeholder="Código ou Senha"
+                        placeholder="Código / Senha"
                         value={cred.code}
                         onChange={(e) => handleUpdateCredential(idx, 'code', e.target.value)}
                         className="flex-1 bg-slate-900 border border-slate-700 text-xs rounded p-2 text-emerald-400 font-mono font-bold"
@@ -687,7 +723,6 @@ export default function ClientsPage() {
                 )}
               </div>
 
-              {/* Notas do Cliente vs Notas Privadas do Admin */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Notas Públicas (Limpadoras)</label>
@@ -695,27 +730,27 @@ export default function ClientsPage() {
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Instruções visíveis para as limpadoras..."
+                    placeholder="Instruções para limpadoras..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-amber-400 mb-1">Notas Confidenciais (Admin Only)</label>
+                  <label className="block text-xs text-amber-400/90 mb-1">Notas Privadas (Admin)</label>
                   <textarea
                     rows={2}
                     value={adminNotes}
                     onChange={(e) => setAdminNotes(e.target.value)}
-                    placeholder="Notas estratégicas apenas para a gerência..."
-                    className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                    placeholder="Notas internas restritas ao admin..."
+                    className="w-full bg-slate-900 border border-amber-500/30 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowClientModal(false)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition"
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm transition"
                 >
                   Cancelar
                 </button>
@@ -732,86 +767,78 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Modal Adicionar Unidade / Imóvel */}
+      {/* Modal Criar/Editar Unidade */}
       {showPropertyModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 shadow-2xl space-y-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Home className="w-5 h-5 text-indigo-400" /> Nova Unidade / Imóvel
+            <h2 className="text-lg font-bold text-white">
+              {editingPropertyId ? 'Editar Unidade' : 'Adicionar Nova Unidade'}
             </h2>
-            <form onSubmit={handleSaveProperty} className="space-y-4">
+            <form onSubmit={handleSaveProperty} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Nome/Identificador da Unidade *</label>
+                <label className="block text-xs text-slate-400 mb-1">Identificação / Nº da Unidade *</label>
                 <input
                   type="text"
                   required
                   value={propertyName}
                   onChange={(e) => setPropertyName(e.target.value)}
-                  placeholder="Ex: Apt 302, Townhouse 4, Área Externa Bloco B"
+                  placeholder="Ex: Apto 102 / Unidade B / Jetty East"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Tipologia do Imóvel</label>
-                <select
-                  value={propertyType}
-                  onChange={(e) => setPropertyType(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="1x1">1x1 (1 Quarto / 1 Banheiro)</option>
-                  <option value="2x2">2x2 (2 Quartos / 2 Banheiros)</option>
-                  <option value="3x2">3x2 (3 Quartos / 2 Banheiros)</option>
-                  <option value="TH_1x1">Townhouse 1x1</option>
-                  <option value="TH_2x2">Townhouse 2x2</option>
-                  <option value="TH_3x3">Townhouse 3x3</option>
-                  <option value="exterior">Área Externa</option>
-                  <option value="building">Prédio / Condomínio</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Endereço da Unidade *</label>
+                <label className="block text-xs text-slate-400 mb-1">Endereço Completo</label>
                 <input
                   type="text"
-                  required
                   value={propertyAddress}
                   onChange={(e) => setPropertyAddress(e.target.value)}
-                  placeholder="Ex: 456 Ocean Dr, Suite 302"
+                  placeholder="Endereço da unidade"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Tipologia / Layout</label>
+                <input
+                  type="text"
+                  value={propertyType}
+                  onChange={(e) => setPropertyType(e.target.value)}
+                  placeholder="Ex: 1x1, 2x2, Studio"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Preço Cobrado ($)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Cobrança ($)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={propertyDefaultPrice}
                     onChange={(e) => setPropertyDefaultPrice(e.target.value)}
-                    placeholder="Opicional"
+                    placeholder="0.00"
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Repasse Limpadora ($)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Repasse ($)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={propertyDefaultPayout}
                     onChange={(e) => setPropertyDefaultPayout(e.target.value)}
-                    placeholder="Opicional"
+                    placeholder="0.00"
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2">
+              <div className="flex justify-end gap-2 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowPropertyModal(false)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition"
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm transition"
                 >
                   Cancelar
                 </button>
@@ -820,7 +847,7 @@ export default function ClientsPage() {
                   disabled={saving}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
                 >
-                  {saving ? 'Adicionando...' : 'Adicionar Unidade'}
+                  {saving ? 'Salvando...' : editingPropertyId ? 'Atualizar Unidade' : 'Adicionar Unidade'}
                 </button>
               </div>
             </form>
