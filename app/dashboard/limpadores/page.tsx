@@ -57,8 +57,10 @@ export default function LimpadoresPage() {
 
   const fetchCleaners = async () => {
     setLoading(true)
-    const { data } = await supabase.from('cleaners').select('*').order('name')
-    if (data) setCleaners(data)
+    const { data, error } = await supabase.from('cleaners').select('*').order('name')
+    if (data && !error) {
+      setCleaners(data as Cleaner[])
+    }
     setLoading(false)
   }
 
@@ -132,29 +134,30 @@ export default function LimpadoresPage() {
     fetchCleaners()
   }
 
-// Excluir Limpador
-const handleDeleteCleaner = async (cleanerId: string) => {
-  if (!confirm('Deseja realmente excluir este limpador? O acesso dele será revogado.')) return
+  // Excluir Limpador
+  const handleDeleteCleaner = async (cleanerId: string) => {
+    if (!confirm('Deseja realmente excluir este limpador? O acesso dele será revogado.')) return
 
-  try {
-    const response = await fetch('/api/delete-cleaner', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cleanerId }),
-    })
+    try {
+      const response = await fetch('/api/delete-cleaner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cleanerId }),
+      })
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!response.ok) {
-      throw new Error(data.error || 'Erro ao excluir')
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao excluir')
+      }
+
+      alert('Limpador e login excluídos com sucesso!')
+      fetchCleaners()
+    } catch (error: unknown) {
+      const err = error as Error
+      alert('Erro: ' + err.message)
     }
-
-    alert('Limpador e login excluídos com sucesso!')
-    fetchCleaners()
-  } catch (error: any) {
-    alert('Erro: ' + error.message)
   }
-}
 
   // Abrir Modal de Senha
   const openAccessModal = (cleaner: Cleaner) => {
@@ -197,8 +200,9 @@ const handleDeleteCleaner = async (cleanerId: string) => {
         setSelectedCleaner(null)
         setAccessSuccess(false)
       }, 1500)
-    } catch (err: any) {
-      setAccessError(err.message)
+    } catch (err: unknown) {
+      const error = err as Error
+      setAccessError(error.message)
     } finally {
       setAccessLoading(false)
     }
