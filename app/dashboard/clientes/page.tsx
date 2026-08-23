@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Mail, Shield } from 'lucide-react'
+import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Mail, Shield, Building2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Property {
@@ -30,7 +30,7 @@ interface Client {
   id: string
   name: string
   address: string
-  client_type: string
+  client_type: 'residential' | 'commercial' | 'vacation' | 'complex' | string
   price_standard: number
   price_heavy: number
   price_move_in_out: number
@@ -41,6 +41,31 @@ interface Client {
   contacts?: Contact[]
   access_credentials?: Credential[]
   properties?: Property[]
+}
+
+// Helpers de formatação no padrão EUA
+const formatUSD = (amount: number | string | undefined | null): string => {
+  const numericValue = typeof amount === 'string' ? parseFloat(amount) : amount
+  if (numericValue === undefined || numericValue === null || isNaN(numericValue)) {
+    return '$0.00'
+  }
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numericValue)
+}
+
+const formatUSPhone = (value: string): string => {
+  const digitsOnly = value.replace(/\D/g, '')
+  if (digitsOnly.length === 10) {
+    return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`
+  }
+  if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+    return `+1 (${digitsOnly.slice(1, 4)}) ${digitsOnly.slice(4, 7)}-${digitsOnly.slice(7)}`
+  }
+  return value
 }
 
 export default function ClientsPage() {
@@ -115,7 +140,8 @@ export default function ClientsPage() {
 
   const handleUpdateContact = (index: number, field: keyof Contact, value: string) => {
     const updated = [...contacts]
-    updated[index] = { ...updated[index], [field]: value }
+    const updatedValue = field === 'value' && updated[index].type === 'phone' ? formatUSPhone(value) : value
+    updated[index] = { ...updated[index], [field]: updatedValue }
     setContacts(updated)
   }
 
@@ -255,7 +281,6 @@ export default function ClientsPage() {
       address: propertyAddress,
     }
 
-    // Inclui colunas caso existam
     if (propertyType) payload.property_type = propertyType
     if (propertyDefaultPrice) payload.price_standard = parseFloat(propertyDefaultPrice) || 0
     if (propertyDefaultPayout) payload.cleaner_payout = parseFloat(propertyDefaultPayout) || 0
@@ -301,11 +326,14 @@ export default function ClientsPage() {
   const renderBadgeType = (type: string) => {
     switch (type) {
       case 'complex':
-        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Complexo</span>
+        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Complexo / Prédios</span>
+      case 'vacation':
       case 'stelar':
-        return <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">Stelar (Vacation)</span>
+        return <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">Vacation Rentals</span>
+      case 'commercial':
+        return <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-medium">Comercial</span>
       default:
-        return <span className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">Pequeno / Residencial</span>
+        return <span className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">Residencial</span>
     }
   }
 
@@ -350,11 +378,9 @@ export default function ClientsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-bold text-white text-lg">{client.name}</span>
                         {renderBadgeType(client.client_type)}
-                        {propertyCount > 0 && client.client_type !== 'complex' && (
-                          <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                            <Home className="w-3 h-3" /> {propertyCount} {propertyCount === 1 ? 'Unidade' : 'Unidades'}
-                          </span>
-                        )}
+                        <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                          <Home className="w-3 h-3" /> {propertyCount} {propertyCount === 1 ? 'Unidade' : 'Unidades'}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" /> {client.address || 'Endereço principal não informado'}
@@ -367,18 +393,16 @@ export default function ClientsPage() {
                         <DollarSign className="w-4 h-4 text-emerald-400" />
                         <div>
                           <span className="text-slate-400 text-[10px] block">Standard</span>
-                          <span className="font-semibold text-emerald-400">${client.price_standard}</span>
+                          <span className="font-semibold text-emerald-400">{formatUSD(client.price_standard)}</span>
                         </div>
                       </div>
 
-                      {client.client_type !== 'complex' && (
-                        <button
-                          onClick={() => handleOpenAddPropertyModal(client.id)}
-                          className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Unidade
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleOpenAddPropertyModal(client.id)}
+                        className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Unidade
+                      </button>
 
                       <button
                         onClick={() => handleOpenEditClientModal(client)}
@@ -440,7 +464,7 @@ export default function ClientsPage() {
                               {client.contacts.map((c, idx) => (
                                 <div key={idx} className="flex items-center justify-between bg-slate-900/80 px-2.5 py-1 rounded text-xs">
                                   <span className="text-slate-400 font-medium">{c.label} ({c.type}):</span>
-                                  <span className="text-indigo-300 font-mono">{c.value}</span>
+                                  <span className="text-indigo-300 font-mono">{c.type === 'phone' ? formatUSPhone(c.value) : c.value}</span>
                                 </div>
                               ))}
                             </div>
@@ -458,61 +482,59 @@ export default function ClientsPage() {
                       </div>
 
                       {/* Lista de Unidades */}
-                      {client.client_type !== 'complex' && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                            <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
-                          </h4>
-                          {propertyCount === 0 ? (
-                            <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada. Clique no botão "+ Unidade" para adicionar.</p>
-                          ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                              {client.properties?.map((prop) => (
-                                <div
-                                  key={prop.id}
-                                  className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
-                                >
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-semibold text-white">{prop.name}</span>
-                                      {prop.property_type && (
-                                        <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
-                                          {prop.property_type}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
-                                      <MapPin className="w-3 h-3 text-slate-500" /> {prop.address || 'Sem endereço registrado'}
-                                    </span>
-                                    {(prop.price_standard > 0 || prop.cleaner_payout > 0) && (
-                                      <span className="text-[10px] text-emerald-400 font-medium block mt-1">
-                                        Cobrança: ${prop.price_standard} | Repasse: ${prop.cleaner_payout}
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
+                        </h4>
+                        {propertyCount === 0 ? (
+                          <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada. Clique no botão "+ Unidade" para adicionar.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {client.properties?.map((prop) => (
+                              <div
+                                key={prop.id}
+                                className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
+                              >
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-white">{prop.name}</span>
+                                    {prop.property_type && (
+                                      <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
+                                        {prop.property_type}
                                       </span>
                                     )}
                                   </div>
-
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => handleOpenEditPropertyModal(prop)}
-                                      className="text-slate-400 hover:text-indigo-400 p-1.5 rounded transition cursor-pointer"
-                                      title="Editar Unidade"
-                                    >
-                                      <Edit className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteProperty(prop.id)}
-                                      className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
-                                      title="Remover Unidade"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                                  <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
+                                    <MapPin className="w-3 h-3 text-slate-500" /> {prop.address || 'Sem endereço registrado'}
+                                  </span>
+                                  {(prop.price_standard > 0 || prop.cleaner_payout > 0) && (
+                                    <span className="text-[10px] text-emerald-400 font-medium block mt-1">
+                                      Cobrança: {formatUSD(prop.price_standard)} | Repasse: {formatUSD(prop.cleaner_payout)}
+                                    </span>
+                                  )}
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleOpenEditPropertyModal(prop)}
+                                    className="text-slate-400 hover:text-indigo-400 p-1.5 rounded transition cursor-pointer"
+                                    title="Editar Unidade"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteProperty(prop.id)}
+                                    className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
+                                    title="Remover Unidade"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -549,8 +571,9 @@ export default function ClientsPage() {
                     onChange={(e) => setClientType(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="residential">Pequeno / Residencial</option>
-                    <option value="stelar">Stelar (Vacation Rentals)</option>
+                    <option value="residential">Residencial</option>
+                    <option value="commercial">Comercial</option>
+                    <option value="vacation">Vacation Rentals (Airbnb)</option>
                     <option value="complex">Complexo / Prédios</option>
                   </select>
                 </div>
@@ -568,7 +591,7 @@ export default function ClientsPage() {
               </div>
 
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-slate-700/70 space-y-3">
-                <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Tabela de Preços Padrão ($)</h4>
+                <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Tabela de Preços Padrão ($ USD)</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
                     <label className="block text-[11px] text-slate-400 mb-1">Standard</label>
@@ -577,6 +600,7 @@ export default function ClientsPage() {
                       step="0.01"
                       value={priceStandard}
                       onChange={(e) => setPriceStandard(e.target.value)}
+                      placeholder="0.00"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -587,6 +611,7 @@ export default function ClientsPage() {
                       step="0.01"
                       value={priceHeavy}
                       onChange={(e) => setPriceHeavy(e.target.value)}
+                      placeholder="0.00"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -597,6 +622,7 @@ export default function ClientsPage() {
                       step="0.01"
                       value={priceMoveInOut}
                       onChange={(e) => setPriceMoveInOut(e.target.value)}
+                      placeholder="0.00"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -607,13 +633,14 @@ export default function ClientsPage() {
                       step="0.01"
                       value={priceVacation}
                       onChange={(e) => setPriceVacation(e.target.value)}
+                      placeholder="0.00"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Repasse Padrão para Limpadora ($)</label>
+                  <label className="block text-[11px] text-slate-400 mb-1">Repasse Padrão para Limpadora ($ USD)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -661,7 +688,7 @@ export default function ClientsPage() {
                       />
                       <input
                         type="text"
-                        placeholder="Número ou E-mail"
+                        placeholder={c.type === 'phone' ? '(555) 000-0000' : 'email@exemplo.com'}
                         value={c.value}
                         onChange={(e) => handleUpdateContact(idx, 'value', e.target.value)}
                         className="flex-1 bg-slate-900 border border-slate-700 text-xs rounded p-2 text-white"
@@ -811,7 +838,7 @@ export default function ClientsPage() {
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Cobrança ($)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Cobrança ($ USD)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -822,7 +849,7 @@ export default function ClientsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Repasse ($)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Repasse ($ USD)</label>
                   <input
                     type="number"
                     step="0.01"

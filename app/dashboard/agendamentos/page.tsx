@@ -1,8 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Calendar, Clock, MapPin, ArrowLeft, Trash2, Edit, UserCheck, Copy, Home, Repeat } from 'lucide-react'
+import {
+  Plus,
+  Calendar,
+  Clock,
+  MapPin,
+  ArrowLeft,
+  Trash2,
+  Edit,
+  UserCheck,
+  Copy,
+  Home,
+  Repeat,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  Grid
+} from 'lucide-react'
 import Link from 'next/link'
 
 interface Client {
@@ -65,26 +81,30 @@ interface Job {
   } | null
 }
 
-export const SERVICE_TYPE_STYLES: Record<string, { label: string; badge: string; border: string }> = {
+export const SERVICE_TYPE_STYLES: Record<string, { label: string; badge: string; border: string; bg: string }> = {
   Standard: {
     label: 'Standard',
     badge: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
     border: 'border-l-4 border-l-blue-500',
+    bg: 'bg-blue-950/40 border-blue-800/50 hover:border-blue-500',
   },
   Pesada: {
     label: 'Pesada',
     badge: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
     border: 'border-l-4 border-l-amber-500',
+    bg: 'bg-amber-950/40 border-amber-800/50 hover:border-amber-500',
   },
   'Move-In/Out': {
     label: 'Move-In / Move-Out',
     badge: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
     border: 'border-l-4 border-l-purple-500',
+    bg: 'bg-purple-950/40 border-purple-800/50 hover:border-purple-500',
   },
   Vacation: {
     label: 'Vacation / Airbnb',
     badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
     border: 'border-l-4 border-l-emerald-500',
+    bg: 'bg-emerald-950/40 border-emerald-800/50 hover:border-emerald-500',
   },
 }
 
@@ -123,10 +143,20 @@ export default function SchedulePage() {
   const [showModal, setShowModal] = useState(false)
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
 
+  // Modos de visualização: 'day' | 'week' | 'month' | 'list'
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'list'>('week')
+  
+  // Data de referência selecionada para navegação no calendário
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const todayStr = getTodayUS()
+    const [y, m, d] = todayStr.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  })
+
   // Form states
   const [clientId, setClientId] = useState('')
   const [propertyId, setPropertyId] = useState('')
-  const [unitDetails, setUnitDetails] = useState('') // Novo campo para texto livre
+  const [unitDetails, setUnitDetails] = useState('')
   const [cleanerId, setCleanerId] = useState('')
   const [scheduledDate, setScheduledDate] = useState(getTodayUS())
   const [scheduledTime, setScheduledTime] = useState('08:00')
@@ -174,6 +204,107 @@ export default function SchedulePage() {
     fetchData()
   }, [])
 
+  // Navegação no calendário (Anterior, Próximo, Hoje)
+  const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
+    if (direction === 'today') {
+      const todayStr = getTodayUS()
+      const [y, m, d] = todayStr.split('-').map(Number)
+      setCurrentDate(new Date(y, m - 1, d))
+      return
+    }
+
+    const newDate = new Date(currentDate)
+    if (viewMode === 'day') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
+    } else if (viewMode === 'week') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
+    } else if (viewMode === 'month') {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
+    }
+    setCurrentDate(newDate)
+  }
+
+  // Células de Dias para a Grade (Dia, Semana ou Mês)
+  const calendarDays = useMemo(() => {
+    const days: { dateStr: string; label: string; isCurrentMonth: boolean; isToday: boolean }[] = []
+    const todayStr = getTodayUS()
+
+    if (viewMode === 'day') {
+      const year = currentDate.getFullYear()
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0')
+      const day = String(currentDate.getDate()).padStart(2, '0')
+      const dateStr = `${year}-${month}-${day}`
+
+      days.push({
+        dateStr,
+        label: currentDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }),
+        isCurrentMonth: true,
+        isToday: dateStr === todayStr,
+      })
+    } else if (viewMode === 'week') {
+      const startOfWeek = new Date(currentDate)
+      startOfWeek.setDate(currentDate.getDate() - currentDate.getDay())
+
+      for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(startOfWeek)
+        dayDate.setDate(startOfWeek.getDate() + i)
+
+        const year = dayDate.getFullYear()
+        const month = String(dayDate.getMonth() + 1).padStart(2, '0')
+        const day = String(dayDate.getDate()).padStart(2, '0')
+        const dateStr = `${year}-${month}-${day}`
+
+        days.push({
+          dateStr,
+          label: dayDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }),
+          isCurrentMonth: true,
+          isToday: dateStr === todayStr,
+        })
+      }
+    } else if (viewMode === 'month') {
+      const year = currentDate.getFullYear()
+      const month = currentDate.getMonth()
+
+      const firstDayOfMonth = new Date(year, month, 1)
+      const lastDayOfMonth = new Date(year, month + 1, 0)
+
+      const startDayOfWeek = firstDayOfMonth.getDay()
+      const startDate = new Date(firstDayOfMonth)
+      startDate.setDate(startDate.getDate() - startDayOfWeek)
+
+      for (let i = 0; i < 35; i++) {
+        const dayDate = new Date(startDate)
+        dayDate.setDate(startDate.getDate() + i)
+
+        const y = dayDate.getFullYear()
+        const m = String(dayDate.getMonth() + 1).padStart(2, '0')
+        const d = String(dayDate.getDate()).padStart(2, '0')
+        const dateStr = `${y}-${m}-${d}`
+
+        days.push({
+          dateStr,
+          label: String(dayDate.getDate()),
+          isCurrentMonth: dayDate.getMonth() === month,
+          isToday: dateStr === todayStr,
+        })
+      }
+    }
+
+    return days
+  }, [currentDate, viewMode])
+
+  // Mapeia agendamentos por data (YYYY-MM-DD)
+  const jobsByDate = useMemo(() => {
+    const map: Record<string, Job[]> = {}
+    jobs.forEach((job) => {
+      if (!map[job.scheduled_date]) {
+        map[job.scheduled_date] = []
+      }
+      map[job.scheduled_date].push(job)
+    })
+    return map
+  }, [jobs])
+
   const availableProperties = properties.filter((p) => p.client_id === clientId)
 
   const updatePricing = (targetServiceType: string, targetPropertyId: string, targetClientId: string) => {
@@ -220,13 +351,13 @@ export default function SchedulePage() {
     updatePricing(type, propertyId, clientId)
   }
 
-  const handleOpenNewModal = () => {
+  const handleOpenNewModal = (initialDate?: string) => {
     setEditingJobId(null)
     setClientId('')
     setPropertyId('')
     setUnitDetails('')
     setCleanerId('')
-    setScheduledDate(getTodayUS())
+    setScheduledDate(initialDate || getTodayUS())
     setScheduledTime('08:00')
     setServiceType('Standard')
     setPrice('')
@@ -284,7 +415,6 @@ export default function SchedulePage() {
     e.preventDefault()
     setSaving(true)
 
-    // Junta as especificações da unidade no campo de observações se preenchido
     let finalNotes = notes
     if (unitDetails.trim()) {
       finalNotes = `[Unidade/Especificação: ${unitDetails.trim()}] ${notes}`.trim()
@@ -388,10 +518,27 @@ export default function SchedulePage() {
     }
   }
 
+  const getHeaderPeriodLabel = () => {
+    if (viewMode === 'day') {
+      return currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    }
+    if (viewMode === 'week') {
+      const start = new Date(currentDate)
+      start.setDate(currentDate.getDate() - currentDate.getDay())
+      const end = new Date(start)
+      end.setDate(start.getDate() + 6)
+      return `${start.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}`
+    }
+    if (viewMode === 'month') {
+      return currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    }
+    return 'Todas as Limpezas'
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       {/* Topbar */}
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">
             <ArrowLeft className="w-5 h-5" />
@@ -399,160 +546,292 @@ export default function SchedulePage() {
           <h1 className="text-xl font-bold text-emerald-400">Agendamentos de Limpeza</h1>
         </div>
         <button
-          onClick={handleOpenNewModal}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition cursor-pointer"
+          onClick={() => handleOpenNewModal()}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition cursor-pointer w-full sm:w-auto justify-center"
         >
           <Plus className="w-4 h-4" /> Nova Limpeza
         </button>
       </header>
 
-      {/* Listagem */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      {/* Controles do Calendário estilo Google Agenda */}
+      <main className="flex-1 p-4 lg:p-6 max-w-7xl mx-auto w-full space-y-4 flex flex-col">
+        <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-3">
+          {/* Controles de Navegação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleNavigate('today')}
+              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-semibold text-slate-200 transition cursor-pointer"
+            >
+              Hoje
+            </button>
+
+            <div className="flex items-center bg-slate-900 rounded-lg border border-slate-700">
+              <button
+                onClick={() => handleNavigate('prev')}
+                className="p-2 hover:bg-slate-800 rounded-l-lg text-slate-300 transition cursor-pointer"
+                title="Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleNavigate('next')}
+                className="p-2 hover:bg-slate-800 rounded-r-lg text-slate-300 transition cursor-pointer"
+                title="Próximo"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <span className="text-sm font-semibold text-white capitalize ml-2">
+              {getHeaderPeriodLabel()}
+            </span>
+          </div>
+
+          {/* Seleção do Modo de Exibição */}
+          <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700 w-full md:w-auto">
+            <button
+              type="button"
+              onClick={() => setViewMode('day')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                viewMode === 'day' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Dia
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('week')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                viewMode === 'week' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Semana
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('month')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                viewMode === 'month' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Mês
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                viewMode === 'list' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" /> Lista
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <p className="text-slate-400 text-center py-10">Carregando agenda...</p>
-        ) : jobs.length === 0 ? (
-          <div className="text-center py-16 bg-slate-800/50 rounded-2xl border border-slate-700">
-            <Calendar className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-            <h3 className="text-lg font-medium text-slate-300">Nenhuma limpeza agendada</h3>
-            <p className="text-slate-500 text-sm mt-1">Clique em "Nova Limpeza" para organizar a agenda.</p>
-          </div>
-        ) : (
+        ) : viewMode === 'list' ? (
+          /* MODO LISTA */
           <div className="space-y-3">
-            {jobs.map((job) => {
-              const basePrice = Number(job.price || 0)
-              const extraPriceNum = Number(job.extra_price || 0)
-              const totalPrice = basePrice + extraPriceNum
-              const assignedCleanerName = job.cleaners?.name || job.cleaner_name
-              const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
+            {jobs.length === 0 ? (
+              <p className="text-center py-12 text-slate-400">Nenhum agendamento encontrado.</p>
+            ) : (
+              jobs.map((job) => {
+                const basePrice = Number(job.price || 0)
+                const extraPriceNum = Number(job.extra_price || 0)
+                const totalPrice = basePrice + extraPriceNum
+                const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
 
-              const addressDisplay = job.properties?.address || job.clients?.address
-
-              return (
-                <div
-                  key={job.id}
-                  className={`bg-slate-800 p-4 rounded-xl border border-slate-700 ${style.border} flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition hover:border-slate-600`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-white text-lg">{job.clients?.name}</span>
-
-                      {/* Badge por Tipo de Serviço */}
-                      <span className={`text-xs px-2 py-0.5 rounded border font-medium ${style.badge}`}>
-                        {style.label}
-                      </span>
-
-                      {/* Unidade / Imóvel Cadastrado */}
-                      {job.properties?.name && (
-                        <span className="text-xs bg-slate-700/80 text-slate-300 border border-slate-600 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
-                          <Home className="w-3 h-3 text-slate-400" /> {job.properties.name}
+                return (
+                  <div
+                    key={job.id}
+                    className={`bg-slate-800 p-4 rounded-xl border border-slate-700 ${style.border} flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition hover:border-slate-600`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-white text-lg">{job.clients?.name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded border font-medium ${style.badge}`}>
+                          {style.label}
                         </span>
-                      )}
-
-                      {/* Tag de Recorrência */}
-                      {job.is_recurring && (
-                        <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
-                          <Repeat className="w-3 h-3" />
-                          {job.recurrence_frequency === 'weekly' && 'Semanal'}
-                          {job.recurrence_frequency === 'biweekly' && 'Quinzenal'}
-                          {job.recurrence_frequency === 'monthly' && 'Mensal'}
-                        </span>
-                      )}
-
-                      {/* Limpador */}
-                      {assignedCleanerName && (
-                        <span className="text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded flex items-center gap-1">
-                          <UserCheck className="w-3 h-3" /> {assignedCleanerName}
-                        </span>
-                      )}
-                    </div>
-
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressDisplay || '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition underline decoration-slate-600 underline-offset-2 w-fit"
-                    >
-                      <MapPin className="w-3.5 h-3.5 text-slate-500" /> {addressDisplay}
-                    </a>
-
-                    {job.notes && (
-                      <p className="text-xs text-slate-400 italic bg-slate-900/40 p-1.5 rounded mt-1">
-                        Obs: {job.notes}
+                        {job.properties?.name && (
+                          <span className="text-xs bg-slate-700/80 text-slate-300 border border-slate-600 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
+                            <Home className="w-3 h-3 text-slate-400" /> {job.properties.name}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                        {job.properties?.address || job.clients?.address}
                       </p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-4 h-4 text-emerald-400" />
-                      <span>{job.scheduled_date}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-amber-400" />
-                      <span>{job.scheduled_time}</span>
                     </div>
 
-                    <div className="text-right">
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4 text-emerald-400" />
+                        <span>{job.scheduled_date}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-4 h-4 text-amber-400" />
+                        <span>{job.scheduled_time}</span>
+                      </div>
                       <div className="font-bold text-emerald-400 text-sm">
                         ${totalPrice.toFixed(2)}
                       </div>
-                      {extraPriceNum > 0 && (
-                        <div className="text-[10px] text-amber-400">
-                          (Base: ${basePrice.toFixed(2)} + Extra: ${extraPriceNum.toFixed(2)})
-                        </div>
-                      )}
-                    </div>
 
-                    <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-lg border border-slate-700">
                       <button
-                        onClick={() => handleUpdateStatus(job.id, 'pending')}
-                        className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
-                          job.status === 'pending' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => handleOpenEditModal(job)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-400 rounded transition cursor-pointer"
                       >
-                        Pendente
+                        <Edit className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleUpdateStatus(job.id, 'in_progress')}
-                        className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
-                          job.status === 'in_progress' ? 'bg-blue-500 text-white font-bold' : 'text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => handleDeleteJob(job.id)}
+                        className="p-1.5 text-slate-500 hover:text-red-400 rounded transition cursor-pointer"
                       >
-                        Em Andamento
-                      </button>
-                      <button
-                        onClick={() => handleUpdateStatus(job.id, 'completed')}
-                        className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
-                          job.status === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Concluída
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        ) : (
+          /* MODO GRADE/CALENDÁRIO (DIA, SEMANA OU MÊS) */
+          <div
+            className={`grid gap-2 flex-1 ${
+              viewMode === 'day'
+                ? 'grid-cols-1'
+                : viewMode === 'week'
+                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-7'
+                : 'grid-cols-2 sm:grid-cols-5 md:grid-cols-7'
+            }`}
+          >
+            {calendarDays.map((day) => {
+              const dayJobs = jobsByDate[day.dateStr] || []
+
+              return (
+                <div
+                  key={day.dateStr}
+                  className={`min-h-[160px] bg-slate-800/60 rounded-xl border flex flex-col p-2 transition ${
+                    day.isToday
+                      ? 'border-emerald-500 bg-emerald-950/10'
+                      : day.isCurrentMonth
+                      ? 'border-slate-700/80 hover:border-slate-600'
+                      : 'border-slate-800 opacity-40'
+                  }`}
+                >
+                  {/* Cabeçalho do Dia */}
+                  <div className="flex items-center justify-between border-b border-slate-700/50 pb-1.5 mb-2">
+                    <span
+                      className={`text-xs font-bold uppercase tracking-wider ${
+                        day.isToday ? 'text-emerald-400 font-extrabold' : 'text-slate-300'
+                      }`}
+                    >
+                      {day.label}
+                    </span>
 
                     <button
-                      onClick={() => handleDuplicateJob(job)}
-                      className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 rounded transition cursor-pointer"
-                      title="Duplicar Agendamento"
+                      onClick={() => handleOpenNewModal(day.dateStr)}
+                      className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 rounded transition cursor-pointer"
+                      title="Agendar neste dia"
                     >
-                      <Copy className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" />
                     </button>
+                  </div>
 
-                    <button
-                      onClick={() => handleOpenEditModal(job)}
-                      className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition cursor-pointer"
-                      title="Editar Agendamento"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
+                  {/* Lista de Limpezas do Dia */}
+                  <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[420px]">
+                    {dayJobs.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic text-center py-4">Sem limpezas</p>
+                    ) : (
+                      dayJobs.map((job) => {
+                        const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
+                        const totalPrice = Number(job.price || 0) + Number(job.extra_price || 0)
+                        const assignedCleaner = job.cleaners?.name || job.cleaner_name
 
-                    <button
-                      onClick={() => handleDeleteJob(job.id)}
-                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition cursor-pointer"
-                      title="Excluir Agendamento"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                        return (
+                          <div
+                            key={job.id}
+                            className={`p-2 rounded-lg border text-left flex flex-col gap-1 transition ${style.bg} ${
+                              job.status === 'completed' ? 'opacity-60' : ''
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <span className="font-bold text-xs text-white truncate max-w-[120px]">
+                                {job.clients?.name}
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-400">
+                                ${totalPrice.toFixed(0)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-slate-300">
+                              <span className="flex items-center gap-0.5">
+                                <Clock className="w-3 h-3 text-amber-400" /> {job.scheduled_time}
+                              </span>
+
+                              <span className={`px-1 py-0.2 rounded text-[9px] font-semibold ${style.badge}`}>
+                                {style.label}
+                              </span>
+                            </div>
+
+                            {/* Detalhes extras no card */}
+                            {job.properties?.name && (
+                              <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                                <Home className="w-2.5 h-2.5" /> {job.properties.name}
+                              </p>
+                            )}
+
+                            {assignedCleaner && (
+                              <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
+                                <UserCheck className="w-2.5 h-2.5" /> {assignedCleaner}
+                              </p>
+                            )}
+
+                            {/* Botões de Ação Rápida */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-700/50 mt-1">
+                              <select
+                                value={job.status}
+                                onChange={(e) => handleUpdateStatus(job.id, e.target.value)}
+                                className="bg-slate-900 border border-slate-700 text-[9px] rounded px-1 py-0.5 text-slate-200 font-medium focus:outline-none"
+                              >
+                                <option value="pending">Pendente</option>
+                                <option value="in_progress">Em Andamento</option>
+                                <option value="completed">Concluída</option>
+                              </select>
+
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleDuplicateJob(job)}
+                                  className="p-1 text-slate-400 hover:text-sky-400 rounded transition cursor-pointer"
+                                  title="Duplicar"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleOpenEditModal(job)}
+                                  className="p-1 text-slate-400 hover:text-emerald-400 rounded transition cursor-pointer"
+                                  title="Editar"
+                                >
+                                  <Edit className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteJob(job.id)}
+                                  className="p-1 text-slate-500 hover:text-red-400 rounded transition cursor-pointer"
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
                 </div>
               )
@@ -585,44 +864,45 @@ export default function SchedulePage() {
               </div>
 
               {/* Seletor de Unidades Cadastradas do Cliente */}
-{clientId && (
-  <div className="space-y-3">
-    {availableProperties.length > 0 ? (
-      <div>
-        <label className="block text-xs text-emerald-400 mb-1 font-semibold">
-          Selecione a Unidade / Imóvel de Vacation *
-        </label>
-        <select
-          value={propertyId}
-          onChange={(e) => handlePropertyChange(e.target.value)}
-          className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white font-medium"
-        >
-          <option value="">Selecione uma unidade do cliente...</option>
-          {availableProperties.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} — {p.address}
-            </option>
-          ))}
-        </select>
-      </div>
-    ) : (
-      <p className="text-xs text-slate-400 italic">
-        Este cliente não possui unidades cadastradas (será usado o endereço padrão).
-      </p>
-    )}
+              {clientId && (
+                <div className="space-y-3">
+                  {availableProperties.length > 0 ? (
+                    <div>
+                      <label className="block text-xs text-emerald-400 mb-1 font-semibold">
+                        Selecione a Unidade / Imóvel de Vacation *
+                      </label>
+                      <select
+                        value={propertyId}
+                        onChange={(e) => handlePropertyChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white font-medium"
+                      >
+                        <option value="">Selecione uma unidade do cliente...</option>
+                        {availableProperties.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} — {p.address}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">
+                      Este cliente não possui unidades cadastradas (será usado o endereço padrão).
+                    </p>
+                  )}
 
-    <div>
-      <label className="block text-xs text-slate-400 mb-1">Especificação Extra (Ex: Apto / Bloco / Área)</label>
-      <input
-        type="text"
-        value={unitDetails}
-        onChange={(e) => setUnitDetails(e.target.value)}
-        placeholder="Ex: Apt 302, Bloco B, Área Externa..."
-        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-      />
-    </div>
-  </div>
-)}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Especificação Extra (Ex: Apto / Bloco / Área)</label>
+                    <input
+                      type="text"
+                      value={unitDetails}
+                      onChange={(e) => setUnitDetails(e.target.value)}
+                      placeholder="Ex: Apt 302, Bloco B, Área Externa..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Selecione o(a) Limpador(a) / Responsável</label>
                 <select
