@@ -1,35 +1,30 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus,
-  Calendar,
-  Clock,
-  MapPin,
   ArrowLeft,
-  Trash2,
-  Edit,
-  UserCheck,
-  Copy,
-  Home,
-  Repeat,
+  Plus,
   ChevronLeft,
   ChevronRight,
   List,
-  Grid
+  Calendar,
+  Clock,
+  MapPin,
+  Home,
+  UserCheck,
+  Edit,
+  Trash2,
+  Copy,
+  Repeat
 } from 'lucide-react'
-import Link from 'next/link'
 
+// Tipagens
 interface Client {
   id: string
   name: string
-  address: string
-  price_standard: number
-  price_heavy: number
-  price_move_in_out: number
-  price_vacation?: number
-  cleaner_payout?: number
+  address?: string
 }
 
 interface Property {
@@ -37,328 +32,179 @@ interface Property {
   client_id: string
   name: string
   address: string
-  price_standard?: number
-  price_heavy?: number
-  price_move_in_out?: number
-  price_vacation?: number
-  cleaner_payout?: number
 }
 
 interface Cleaner {
   id: string
   name: string
-  email?: string
 }
 
 interface Job {
   id: string
   client_id: string
-  property_id?: string | null
-  cleaner_id: string | null
+  property_id?: string
+  cleaner_id?: string
+  cleaner_name?: string
   scheduled_date: string
   scheduled_time: string
   service_type: string
-  price: number | string
-  extra_price: number | string
-  payout?: number | string
-  extra_payout?: number | string
-  cleaner_name: string | null
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-  notes: string | null
-  is_recurring?: boolean
-  recurrence_frequency?: string
-  recurrence_until?: string
-  clients: {
-    name: string
-    address: string
-  }
-  properties?: {
-    name: string
-    address: string
-  } | null
-  cleaners: {
-    name: string
-  } | null
+  price: number
+  extra_price?: number
+  payout?: number
+  extra_payout?: number
+  status: 'pending' | 'in_progress' | 'completed'
+  notes?: string
+  clients?: Client
+  properties?: Property
+  cleaners?: Cleaner
 }
 
-export const SERVICE_TYPE_STYLES: Record<string, { label: string; badge: string; border: string; bg: string }> = {
+interface CalendarDay {
+  dateStr: string
+  label: string
+  isToday: boolean
+  isCurrentMonth: boolean
+}
+
+const SERVICE_TYPE_STYLES: Record<string, { bg: string; border: string; badge: string; label: string }> = {
   Standard: {
-    label: 'Standard',
-    badge: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    border: 'border-l-4 border-l-blue-500',
-    bg: 'bg-blue-950/40 border-blue-800/50 hover:border-blue-500',
+    bg: 'bg-emerald-950/20 hover:bg-emerald-950/40',
+    border: 'border-emerald-500/40',
+    badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    label: 'Standard'
   },
   Pesada: {
-    label: 'Pesada',
-    badge: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-    border: 'border-l-4 border-l-amber-500',
-    bg: 'bg-amber-950/40 border-amber-800/50 hover:border-amber-500',
+    bg: 'bg-amber-950/20 hover:bg-amber-950/40',
+    border: 'border-amber-500/40',
+    badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    label: 'Pesada'
   },
   'Move-In/Out': {
-    label: 'Move-In / Move-Out',
-    badge: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    border: 'border-l-4 border-l-purple-500',
-    bg: 'bg-purple-950/40 border-purple-800/50 hover:border-purple-500',
+    bg: 'bg-rose-950/20 hover:bg-rose-950/40',
+    border: 'border-rose-500/40',
+    badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    label: 'Move-In/Out'
   },
   Vacation: {
-    label: 'Vacation / Airbnb',
-    badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-    border: 'border-l-4 border-l-emerald-500',
-    bg: 'bg-emerald-950/40 border-emerald-800/50 hover:border-emerald-500',
+    bg: 'bg-purple-950/20 hover:bg-purple-950/40',
+    border: 'border-purple-500/40',
+    badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    label: 'Vacation / Airbnb'
   },
-}
-
-const getTodayUS = () => {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })
-}
-
-const generateRecurringDates = (startDateStr: string, frequency: string, untilDateStr: string): string[] => {
-  const dates: string[] = []
-  let current = new Date(startDateStr + 'T00:00:00')
-  const until = new Date(untilDateStr + 'T23:59:59')
-
-  while (current <= until) {
-    dates.push(current.toISOString().split('T')[0])
-
-    if (frequency === 'weekly') {
-      current.setDate(current.getDate() + 7)
-    } else if (frequency === 'biweekly') {
-      current.setDate(current.getDate() + 14)
-    } else if (frequency === 'monthly') {
-      current.setMonth(current.getMonth() + 1)
-    } else {
-      break
-    }
+  Complex: {
+    bg: 'bg-sky-950/20 hover:bg-sky-950/40',
+    border: 'border-sky-500/40',
+    badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+    label: 'Complex'
+  },
+  Residencial: {
+    bg: 'bg-indigo-950/20 hover:bg-indigo-950/40',
+    border: 'border-indigo-500/40',
+    badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+    label: 'Residencial'
   }
-
-  return dates
 }
 
-export default function SchedulePage() {
+export default function CalendarPage() {
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'list'>('month')
   const [jobs, setJobs] = useState<Job[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [cleaners, setCleaners] = useState<Cleaner[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Modal State
   const [showModal, setShowModal] = useState(false)
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
-
-  // Modos de visualização: 'day' | 'week' | 'month' | 'list'
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'list'>('week')
-  
-  // Data de referência selecionada para navegação no calendário
-  const [currentDate, setCurrentDate] = useState<Date>(() => {
-    const todayStr = getTodayUS()
-    const [y, m, d] = todayStr.split('-').map(Number)
-    return new Date(y, m - 1, d)
-  })
-
-  // Form states
   const [clientId, setClientId] = useState('')
   const [propertyId, setPropertyId] = useState('')
+  const [availableProperties, setAvailableProperties] = useState<Property[]>([])
   const [unitDetails, setUnitDetails] = useState('')
   const [cleanerId, setCleanerId] = useState('')
-  const [scheduledDate, setScheduledDate] = useState(getTodayUS())
-  const [scheduledTime, setScheduledTime] = useState('08:00')
+  const [scheduledDate, setScheduledDate] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('09:00')
   const [serviceType, setServiceType] = useState('Standard')
   const [price, setPrice] = useState('')
   const [extraPrice, setExtraPrice] = useState('0')
-  const [payout, setPayout] = useState<number | string>('')
-  const [extraPayout, setExtraPayout] = useState<number | string>('')
+  const [payout, setPayout] = useState('')
+  const [extraPayout, setExtraPayout] = useState('0')
   const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  // Estados de Recorrência
+  // Recorrência
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrenceFrequency, setRecurrenceFrequency] = useState('weekly')
   const [recurrenceUntil, setRecurrenceUntil] = useState('')
-
-  const [saving, setSaving] = useState(false)
-
-  const fetchData = async () => {
-    setLoading(true)
-
-    const { data: clientsData } = await supabase.from('clients').select('*').order('name')
-    if (clientsData) setClients(clientsData)
-
-    const { data: propertiesData } = await supabase.from('properties').select('*').order('name')
-    if (propertiesData) setProperties(propertiesData)
-
-    const { data: cleanersData } = await supabase.from('cleaners').select('id, name, email').eq('active', true).order('name')
-    if (cleanersData) setCleaners(cleanersData)
-
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const cutoff = yesterday.toISOString()
-
-    const { data: jobsData } = await supabase
-      .from('jobs')
-      .select('*, clients(name, address), properties(name, address), cleaners(name)')
-      .or(`status.neq.completed,completed_at.gt.${cutoff}`)
-      .order('scheduled_date', { ascending: true })
-
-    if (jobsData) setJobs(jobsData as any)
-
-    setLoading(false)
-  }
 
   useEffect(() => {
     fetchData()
   }, [])
 
-  // Navegação no calendário (Anterior, Próximo, Hoje)
-  const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
-    if (direction === 'today') {
-      const todayStr = getTodayUS()
-      const [y, m, d] = todayStr.split('-').map(Number)
-      setCurrentDate(new Date(y, m - 1, d))
-      return
-    }
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const [jobsRes, clientsRes, propsRes, cleanersRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select('*, clients(*), properties(*), cleaners(*)')
+          .order('scheduled_date', { ascending: true })
+          .order('scheduled_time', { ascending: true }),
+        supabase.from('clients').select('*').order('name'),
+        supabase.from('properties').select('*').order('name'),
+        supabase.from('cleaners').select('*').order('name')
+      ])
 
-    const newDate = new Date(currentDate)
-    if (viewMode === 'day') {
-      newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
-    } else if (viewMode === 'week') {
-      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
-    } else if (viewMode === 'month') {
-      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
-    }
-    setCurrentDate(newDate)
-  }
-
-  // Células de Dias para a Grade (Dia, Semana ou Mês)
-  const calendarDays = useMemo(() => {
-    const days: { dateStr: string; label: string; isCurrentMonth: boolean; isToday: boolean }[] = []
-    const todayStr = getTodayUS()
-
-    if (viewMode === 'day') {
-      const year = currentDate.getFullYear()
-      const month = String(currentDate.getMonth() + 1).padStart(2, '0')
-      const day = String(currentDate.getDate()).padStart(2, '0')
-      const dateStr = `${year}-${month}-${day}`
-
-      days.push({
-        dateStr,
-        label: currentDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }),
-        isCurrentMonth: true,
-        isToday: dateStr === todayStr,
-      })
-    } else if (viewMode === 'week') {
-      const startOfWeek = new Date(currentDate)
-      startOfWeek.setDate(currentDate.getDate() - currentDate.getDay())
-
-      for (let i = 0; i < 7; i++) {
-        const dayDate = new Date(startOfWeek)
-        dayDate.setDate(startOfWeek.getDate() + i)
-
-        const year = dayDate.getFullYear()
-        const month = String(dayDate.getMonth() + 1).padStart(2, '0')
-        const day = String(dayDate.getDate()).padStart(2, '0')
-        const dateStr = `${year}-${month}-${day}`
-
-        days.push({
-          dateStr,
-          label: dayDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }),
-          isCurrentMonth: true,
-          isToday: dateStr === todayStr,
-        })
-      }
-    } else if (viewMode === 'month') {
-      const year = currentDate.getFullYear()
-      const month = currentDate.getMonth()
-
-      const firstDayOfMonth = new Date(year, month, 1)
-      const lastDayOfMonth = new Date(year, month + 1, 0)
-
-      const startDayOfWeek = firstDayOfMonth.getDay()
-      const startDate = new Date(firstDayOfMonth)
-      startDate.setDate(startDate.getDate() - startDayOfWeek)
-
-      for (let i = 0; i < 35; i++) {
-        const dayDate = new Date(startDate)
-        dayDate.setDate(startDate.getDate() + i)
-
-        const y = dayDate.getFullYear()
-        const m = String(dayDate.getMonth() + 1).padStart(2, '0')
-        const d = String(dayDate.getDate()).padStart(2, '0')
-        const dateStr = `${y}-${m}-${d}`
-
-        days.push({
-          dateStr,
-          label: String(dayDate.getDate()),
-          isCurrentMonth: dayDate.getMonth() === month,
-          isToday: dateStr === todayStr,
-        })
-      }
-    }
-
-    return days
-  }, [currentDate, viewMode])
-
-  // Mapeia agendamentos por data (YYYY-MM-DD)
-  const jobsByDate = useMemo(() => {
-    const map: Record<string, Job[]> = {}
-    jobs.forEach((job) => {
-      if (!map[job.scheduled_date]) {
-        map[job.scheduled_date] = []
-      }
-      map[job.scheduled_date].push(job)
-    })
-    return map
-  }, [jobs])
-
-  const availableProperties = properties.filter((p) => p.client_id === clientId)
-
-  const updatePricing = (targetServiceType: string, targetPropertyId: string, targetClientId: string) => {
-    if (editingJobId) return
-
-    const selectedProperty = properties.find((p) => p.id === targetPropertyId)
-    const selectedClient = clients.find((c) => c.id === targetClientId)
-
-    const source = selectedProperty || selectedClient
-    if (!source) return
-
-    let basePrice = 0
-    if (targetServiceType === 'Standard') basePrice = source.price_standard || 0
-    if (targetServiceType === 'Pesada') basePrice = source.price_heavy || 0
-    if (targetServiceType === 'Move-In/Out') basePrice = source.price_move_in_out || 0
-    if (targetServiceType === 'Vacation') basePrice = source.price_vacation || source.price_standard || 0
-
-    setPrice(basePrice.toString())
-
-    if (source.cleaner_payout !== undefined && source.cleaner_payout !== null) {
-      setPayout(source.cleaner_payout)
+      if (jobsRes.data) setJobs(jobsRes.data as Job[])
+      if (clientsRes.data) setClients(clientsRes.data)
+      if (propsRes.data) setProperties(propsRes.data)
+      if (cleanersRes.data) setCleaners(cleanersRes.data)
+    } catch (err) {
+      console.error('Erro ao buscar dados:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleClientChange = (id: string) => {
-    setClientId(id)
+  // Extrai o nome da unidade/imóvel ou especificação do campo notes
+  const getJobUnitLabel = (job: Job) => {
+    if (job.properties?.name) {
+      return job.properties.name
+    }
+    if (job.notes) {
+      const match = job.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+      if (match && match[1]) {
+        return match[1].trim()
+      }
+    }
+    return null
+  }
+
+  // Troca de cliente no modal
+  const handleClientChange = (selectedClientId: string) => {
+    setClientId(selectedClientId)
+    const props = properties.filter((p) => p.client_id === selectedClientId)
+    setAvailableProperties(props)
     setPropertyId('')
-    setUnitDetails('')
-
-    const selected = clients.find((c) => c.id === id)
-    if (selected && !editingJobId) {
-      updatePricing(serviceType, '', id)
-      if ((selected as any).notes) setNotes((selected as any).notes)
-    }
   }
 
-  const handlePropertyChange = (propId: string) => {
-    setPropertyId(propId)
-    updatePricing(serviceType, propId, clientId)
+  const handlePropertyChange = (selectedPropId: string) => {
+    setPropertyId(selectedPropId)
   }
 
   const handleServiceTypeChange = (type: string) => {
     setServiceType(type)
-    updatePricing(type, propertyId, clientId)
   }
 
   const handleOpenNewModal = (initialDate?: string) => {
     setEditingJobId(null)
     setClientId('')
     setPropertyId('')
+    setAvailableProperties([])
     setUnitDetails('')
     setCleanerId('')
-    setScheduledDate(initialDate || getTodayUS())
-    setScheduledTime('08:00')
+    setScheduledDate(initialDate || new Date().toISOString().split('T')[0])
+    setScheduledTime('09:00')
     setServiceType('Standard')
     setPrice('')
     setExtraPrice('0')
@@ -373,133 +219,132 @@ export default function SchedulePage() {
 
   const handleOpenEditModal = (job: Job) => {
     setEditingJobId(job.id)
-    setClientId(job.client_id)
-    setPropertyId(job.property_id || '')
-    setUnitDetails('')
-    setCleanerId(job.cleaner_id || '')
-    setScheduledDate(job.scheduled_date)
-    setScheduledTime(job.scheduled_time)
-    setServiceType(job.service_type)
-    setPrice(job.price ? job.price.toString() : '0')
-    setExtraPrice(job.extra_price ? job.extra_price.toString() : '0')
-    setPayout(job.payout ? job.payout.toString() : '')
-    setExtraPayout(job.extra_payout ? job.extra_payout.toString() : '0')
-    setNotes(job.notes || '')
-    setIsRecurring(job.is_recurring || false)
-    setRecurrenceFrequency(job.recurrence_frequency || 'weekly')
-    setRecurrenceUntil(job.recurrence_until || '')
-    setShowModal(true)
-  }
+    setClientId(job.client_id || '')
 
-  const handleDuplicateJob = (job: Job) => {
-    setEditingJobId(null)
-    setClientId(job.client_id)
+    const props = properties.filter((p) => p.client_id === job.client_id)
+    setAvailableProperties(props)
     setPropertyId(job.property_id || '')
-    setUnitDetails('')
+
+    // Extrai especificação antiga se existir em notes
+    let cleanNotes = job.notes || ''
+    const match = cleanNotes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+    if (match) {
+      setUnitDetails(match[1].trim())
+      cleanNotes = cleanNotes.replace(/\[Unidade\/Especificação:\s*[^\]]+\]\n?/, '').trim()
+    } else {
+      setUnitDetails('')
+    }
+
     setCleanerId(job.cleaner_id || '')
-    setScheduledDate('')
-    setScheduledTime(job.scheduled_time)
-    setServiceType(job.service_type)
-    setPrice(job.price ? job.price.toString() : '0')
-    setExtraPrice(job.extra_price ? job.extra_price.toString() : '0')
-    setPayout(job.payout ? job.payout.toString() : '')
-    setExtraPayout(job.extra_payout ? job.extra_payout.toString() : '0')
-    setNotes(job.notes || '')
+    setScheduledDate(job.scheduled_date || '')
+    setScheduledTime(job.scheduled_time || '09:00')
+    setServiceType(job.service_type || 'Standard')
+    setPrice(job.price ? String(job.price) : '')
+    setExtraPrice(job.extra_price ? String(job.extra_price) : '0')
+    setPayout(job.payout ? String(job.payout) : '')
+    setExtraPayout(job.extra_payout ? String(job.extra_payout) : '0')
+    setNotes(cleanNotes)
     setIsRecurring(false)
-    setRecurrenceFrequency('weekly')
-    setRecurrenceUntil('')
     setShowModal(true)
   }
 
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
-
-    let finalNotes = notes
-    if (unitDetails.trim()) {
-      finalNotes = `[Unidade/Especificação: ${unitDetails.trim()}] ${notes}`.trim()
+    if (!clientId || !scheduledDate || !scheduledTime) {
+      alert('Por favor, preencha todos os campos obrigatórios.')
+      return
     }
 
-    const basePayload = {
+    setSaving(true)
+
+    // Formata o campo de notas incluindo a especificação de unidade se houver
+    let finalNotes = notes.trim()
+    if (unitDetails.trim()) {
+      const tag = `[Unidade/Especificação: ${unitDetails.trim()}]`
+      finalNotes = finalNotes ? `${tag}\n${finalNotes}` : tag
+    }
+
+    const payload = {
       client_id: clientId,
       property_id: propertyId || null,
       cleaner_id: cleanerId || null,
+      scheduled_date: scheduledDate,
       scheduled_time: scheduledTime,
       service_type: serviceType,
       price: parseFloat(price) || 0,
       extra_price: parseFloat(extraPrice) || 0,
-      payout: parseFloat(String(payout)) || 0,
-      extra_payout: parseFloat(String(extraPayout)) || 0,
-      notes: finalNotes || null,
-      is_recurring: isRecurring,
-      recurrence_frequency: isRecurring ? recurrenceFrequency : null,
-      recurrence_until: isRecurring ? recurrenceUntil : null,
+      payout: parseFloat(payout) || 0,
+      extra_payout: parseFloat(extraPayout) || 0,
+      notes: finalNotes,
+      status: 'pending'
     }
 
-    let error
-
-    if (editingJobId) {
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ ...basePayload, scheduled_date: scheduledDate })
-        .eq('id', editingJobId)
-      error = updateError
-    } else {
-      if (isRecurring && recurrenceUntil && recurrenceUntil >= scheduledDate) {
-        const dates = generateRecurringDates(scheduledDate, recurrenceFrequency, recurrenceUntil)
-        const jobsToInsert = dates.map((date) => ({
-          ...basePayload,
-          scheduled_date: date,
-          status: 'pending',
-        }))
-
-        const { error: batchError } = await supabase.from('jobs').insert(jobsToInsert)
-        error = batchError
+    try {
+      if (editingJobId) {
+        const { error } = await supabase.from('jobs').update(payload).eq('id', editingJobId)
+        if (error) throw error
       } else {
-        const { error: insertError } = await supabase
-          .from('jobs')
-          .insert([{ ...basePayload, scheduled_date: scheduledDate, status: 'pending' }])
-        error = insertError
-      }
-    }
+        if (isRecurring && recurrenceUntil) {
+          const datesToCreate: string[] = [scheduledDate]
+          let current = new Date(`${scheduledDate}T00:00:00`)
+          const end = new Date(`${recurrenceUntil}T00:00:00`)
 
-    if (!error) {
-      if (!editingJobId && cleanerId) {
-        const selectedCleaner = cleaners.find((c) => c.id === cleanerId)
-        const selectedClient = clients.find((c) => c.id === clientId)
-        const selectedProperty = properties.find((p) => p.id === propertyId)
+          while (true) {
+            if (recurrenceFrequency === 'weekly') {
+              current.setDate(current.getDate() + 7)
+            } else if (recurrenceFrequency === 'biweekly') {
+              current.setDate(current.getDate() + 14)
+            } else if (recurrenceFrequency === 'monthly') {
+              current.setMonth(current.getMonth() + 1)
+            }
 
-        if (selectedCleaner?.email) {
-          fetch('/api/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              cleanerEmail: selectedCleaner.email,
-              cleanerName: selectedCleaner.name,
-              clientName: selectedClient?.name || 'Cliente',
-              date: scheduledDate,
-              time: scheduledTime,
-              address: selectedProperty?.address || selectedClient?.address || '',
-              payout: selectedProperty?.cleaner_payout || selectedClient?.cleaner_payout || 0,
-            }),
-          }).catch((err) => console.error('Erro ao enviar e-mail:', err))
+            if (current > end) break
+            datesToCreate.push(current.toISOString().split('T')[0])
+          }
+
+          const batchPayloads = datesToCreate.map((d) => ({
+            ...payload,
+            scheduled_date: d
+          }))
+
+          const { error } = await supabase.from('jobs').insert(batchPayloads)
+          if (error) throw error
+        } else {
+          const { error } = await supabase.from('jobs').insert([payload])
+          if (error) throw error
         }
       }
 
       setShowModal(false)
       fetchData()
-    } else {
-      alert('Erro ao salvar agendamento: ' + error.message)
+    } catch (err: any) {
+      alert('Erro ao salvar agendamento: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
+  }
+
+  const handleDuplicateJob = async (job: Job) => {
+    const newDate = prompt('Digite a nova data para a cópia (AAAA-MM-DD):', job.scheduled_date)
+    if (!newDate) return
+
+    const { id, clients, properties, cleaners, ...copyData } = job
+    const payload = {
+      ...copyData,
+      scheduled_date: newDate,
+      status: 'pending'
+    }
+
+    const { error } = await supabase.from('jobs').insert([payload])
+    if (!error) {
+      fetchData()
+    } else {
+      alert('Erro ao duplicar agendamento: ' + error.message)
+    }
   }
 
   const handleUpdateStatus = async (jobId: string, newStatus: string) => {
-    const { error } = await supabase
-      .from('jobs')
-      .update({ status: newStatus })
-      .eq('id', jobId)
-
+    const { error } = await supabase.from('jobs').update({ status: newStatus }).eq('id', jobId)
     if (!error) {
       fetchData()
     } else {
@@ -518,6 +363,26 @@ export default function SchedulePage() {
     }
   }
 
+  // Navegação Calendário
+  const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
+    const newDate = new Date(currentDate)
+
+    if (direction === 'today') {
+      setCurrentDate(new Date())
+      return
+    }
+
+    if (viewMode === 'day') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
+    } else if (viewMode === 'week') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
+    } else if (viewMode === 'month') {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
+    }
+
+    setCurrentDate(newDate)
+  }
+
   const getHeaderPeriodLabel = () => {
     if (viewMode === 'day') {
       return currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -534,6 +399,74 @@ export default function SchedulePage() {
     }
     return 'Todas as Limpezas'
   }
+
+  // Gerador de Dias do Calendário
+  const generateCalendarDays = (): CalendarDay[] => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const days: CalendarDay[] = []
+
+    if (viewMode === 'day') {
+      const dateStr = currentDate.toISOString().split('T')[0]
+      days.push({
+        dateStr,
+        label: currentDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'numeric' }),
+        isToday: dateStr === todayStr,
+        isCurrentMonth: true
+      })
+      return days
+    }
+
+    if (viewMode === 'week') {
+      const start = new Date(currentDate)
+      start.setDate(currentDate.getDate() - currentDate.getDay())
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start)
+        d.setDate(start.getDate() + i)
+        const dateStr = d.toISOString().split('T')[0]
+        days.push({
+          dateStr,
+          label: d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }),
+          isToday: dateStr === todayStr,
+          isCurrentMonth: true
+        })
+      }
+      return days
+    }
+
+    // Mês
+    const year = currentDate.getFullYear()
+    const month = currentDate.getMonth()
+
+    const firstDayOfMonth = new Date(year, month, 1)
+    const startingDayOfWeek = firstDayOfMonth.getDay()
+
+    const startDate = new Date(firstDayOfMonth)
+    startDate.setDate(startDate.getDate() - startingDayOfWeek)
+
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(startDate)
+      d.setDate(startDate.getDate() + i)
+      const dateStr = d.toISOString().split('T')[0]
+      days.push({
+        dateStr,
+        label: `${d.getDate()} ${d.toLocaleDateString('pt-BR', { weekday: 'short' })}`,
+        isToday: dateStr === todayStr,
+        isCurrentMonth: d.getMonth() === month
+      })
+    }
+
+    return days
+  }
+
+  const calendarDays = generateCalendarDays()
+
+  // Agrupa agendamentos por data
+  const jobsByDate = jobs.reduce<Record<string, Job[]>>((acc, job) => {
+    if (!acc[job.scheduled_date]) acc[job.scheduled_date] = []
+    acc[job.scheduled_date].push(job)
+    return acc
+  }, {})
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
@@ -644,6 +577,7 @@ export default function SchedulePage() {
                 const extraPriceNum = Number(job.extra_price || 0)
                 const totalPrice = basePrice + extraPriceNum
                 const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
+                const unitLabel = getJobUnitLabel(job)
 
                 return (
                   <div
@@ -656,15 +590,15 @@ export default function SchedulePage() {
                         <span className={`text-xs px-2 py-0.5 rounded border font-medium ${style.badge}`}>
                           {style.label}
                         </span>
-                        {job.properties?.name && (
-                          <span className="text-xs bg-slate-700/80 text-slate-300 border border-slate-600 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
-                            <Home className="w-3 h-3 text-slate-400" /> {job.properties.name}
+                        {unitLabel && (
+                          <span className="text-xs bg-purple-900/50 text-purple-200 border border-purple-600/50 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
+                            <Home className="w-3 h-3 text-purple-400" /> {unitLabel}
                           </span>
                         )}
                       </div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                        {job.properties?.address || job.clients?.address}
+                        {job.properties?.address || job.clients?.address || 'Endereço não informado'}
                       </p>
                     </div>
 
@@ -752,6 +686,7 @@ export default function SchedulePage() {
                         const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
                         const totalPrice = Number(job.price || 0) + Number(job.extra_price || 0)
                         const assignedCleaner = job.cleaners?.name || job.cleaner_name
+                        const unitLabel = getJobUnitLabel(job)
 
                         return (
                           <div
@@ -779,16 +714,16 @@ export default function SchedulePage() {
                               </span>
                             </div>
 
-                            {/* Detalhes extras no card */}
-                            {job.properties?.name && (
-                              <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
-                                <Home className="w-2.5 h-2.5" /> {job.properties.name}
+                            {/* Detalhes extras e Unidades/Apartamentos no card */}
+                            {unitLabel && (
+                              <p className="text-[10px] text-purple-300 truncate flex items-center gap-1 font-medium bg-purple-950/40 px-1 py-0.5 rounded border border-purple-800/40">
+                                <Home className="w-2.5 h-2.5 text-purple-400 flex-shrink-0" /> {unitLabel}
                               </p>
                             )}
 
                             {assignedCleaner && (
                               <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
-                                <UserCheck className="w-2.5 h-2.5" /> {assignedCleaner}
+                                <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
                               </p>
                             )}
 
