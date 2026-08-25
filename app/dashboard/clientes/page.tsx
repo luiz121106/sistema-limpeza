@@ -2,17 +2,29 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Mail, Shield, Building2 } from 'lucide-react'
+import { Plus, ArrowLeft, Trash2, Edit, Home, ChevronDown, ChevronUp, MapPin, DollarSign, Key, Phone, Shield, Building2, Layers } from 'lucide-react'
 import Link from 'next/link'
 
 interface Property {
   id: string
   client_id: string
+  complex_id?: string | null
+  is_complex?: boolean
   name: string
   address: string
   property_type: string
   price_standard: number
   cleaner_payout: number
+  is_common_area?: boolean
+}
+
+interface CommonArea {
+  id: string
+  client_id: string
+  property_id?: string | null
+  name: string
+  client_price: number
+  cleaner_price: number
 }
 
 interface Contact {
@@ -41,6 +53,7 @@ interface Client {
   contacts?: Contact[]
   access_credentials?: Credential[]
   properties?: Property[]
+  common_areas?: CommonArea[]
 }
 
 // Helpers de formatação no padrão EUA
@@ -86,12 +99,12 @@ export default function ClientsPage() {
   const [cleanerPayout, setCleanerPayout] = useState('')
   const [notes, setNotes] = useState('')
   const [adminNotes, setAdminNotes] = useState('')
-  
+
   // Múltiplos Contatos e Credenciais
   const [contacts, setContacts] = useState<Contact[]>([])
   const [credentials, setCredentials] = useState<Credential[]>([])
 
-  // Modal Unidade / Imóvel
+  // Modal Unidade / Área Comum
   const [showPropertyModal, setShowPropertyModal] = useState(false)
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null)
   const [selectedClientIdForProperty, setSelectedClientIdForProperty] = useState<string | null>(null)
@@ -100,6 +113,10 @@ export default function ClientsPage() {
   const [propertyType, setPropertyType] = useState('1x1')
   const [propertyDefaultPrice, setPropertyDefaultPrice] = useState('')
   const [propertyDefaultPayout, setPropertyDefaultPayout] = useState('')
+  const [isBelongsToComplex, setIsBelongsToComplex] = useState(false)
+  
+  // ⚠️ Novo estado para diferenciar Unidade de Área Comum
+  const [entryCategory, setEntryCategory] = useState<'unit' | 'common_area'>('unit')
 
   const [saving, setSaving] = useState(false)
 
@@ -111,8 +128,13 @@ export default function ClientsPage() {
       .select('*')
       .order('name')
 
-    const { data: propertiesData, error: propErr } = await supabase
+    const { data: propertiesData } = await supabase
       .from('properties')
+      .select('*')
+      .order('name')
+
+    const { data: commonAreasData } = await supabase
+      .from('property_common_areas')
       .select('*')
       .order('name')
 
@@ -122,6 +144,7 @@ export default function ClientsPage() {
         contacts: Array.isArray(client.contacts) ? client.contacts : [],
         access_credentials: Array.isArray(client.access_credentials) ? client.access_credentials : [],
         properties: (propertiesData || []).filter((p) => p.client_id === client.id),
+        common_areas: (commonAreasData || []).filter((ca) => ca.client_id === client.id),
       }))
       setClients(merged)
     }
@@ -133,7 +156,7 @@ export default function ClientsPage() {
     fetchClientsAndProperties()
   }, [])
 
-  // --- Handlers Contatos Dinâmicos ---
+  // Handlers Contatos Dinâmicos
   const handleAddContact = () => {
     setContacts([...contacts, { type: 'phone', label: '', value: '' }])
   }
@@ -149,7 +172,7 @@ export default function ClientsPage() {
     setContacts(contacts.filter((_, i) => i !== index))
   }
 
-  // --- Handlers Credenciais Dinâmicas ---
+  // Handlers Credenciais Dinâmicas
   const handleAddCredential = () => {
     setCredentials([...credentials, { label: '', code: '' }])
   }
@@ -164,7 +187,7 @@ export default function ClientsPage() {
     setCredentials(credentials.filter((_, i) => i !== index))
   }
 
-  // --- Ações de Cliente ---
+  // Ações de Cliente
   const handleOpenNewClientModal = () => {
     setEditingClientId(null)
     setName('')
@@ -247,26 +270,40 @@ export default function ClientsPage() {
     }
   }
 
-  // --- Ações de Unidade / Imóvel ---
+  // Ações de Unidade / Área Comum
   const handleOpenAddPropertyModal = (clientId: string) => {
     setSelectedClientIdForProperty(clientId)
     setEditingPropertyId(null)
+    setEntryCategory('unit')
     setPropertyName('')
     setPropertyAddress('')
     setPropertyType('1x1')
     setPropertyDefaultPrice('')
     setPropertyDefaultPayout('')
+    setIsBelongsToComplex(false)
     setShowPropertyModal(true)
   }
 
   const handleOpenEditPropertyModal = (property: Property) => {
     setSelectedClientIdForProperty(property.client_id)
     setEditingPropertyId(property.id)
+    setEntryCategory('unit')
     setPropertyName(property.name)
     setPropertyAddress(property.address || '')
     setPropertyType(property.property_type || '1x1')
     setPropertyDefaultPrice(property.price_standard?.toString() || '0')
     setPropertyDefaultPayout(property.cleaner_payout?.toString() || '0')
+    setIsBelongsToComplex(property.is_complex || !!property.complex_id)
+    setShowPropertyModal(true)
+  }
+
+  const handleOpenEditCommonAreaModal = (area: CommonArea) => {
+    setSelectedClientIdForProperty(area.client_id)
+    setEditingPropertyId(area.id)
+    setEntryCategory('common_area')
+    setPropertyName(area.name)
+    setPropertyDefaultPrice(area.client_price?.toString() || '0')
+    setPropertyDefaultPayout(area.cleaner_price?.toString() || '0')
     setShowPropertyModal(true)
   }
 
@@ -275,35 +312,61 @@ export default function ClientsPage() {
     if (!selectedClientIdForProperty) return
     setSaving(true)
 
-    const payload: Record<string, any> = {
-      client_id: selectedClientIdForProperty,
-      name: propertyName,
-      address: propertyAddress,
-    }
-
-    if (propertyType) payload.property_type = propertyType
-    if (propertyDefaultPrice) payload.price_standard = parseFloat(propertyDefaultPrice) || 0
-    if (propertyDefaultPayout) payload.cleaner_payout = parseFloat(propertyDefaultPayout) || 0
-
     let error
-    if (editingPropertyId) {
-      const { error: updateError } = await supabase
-        .from('properties')
-        .update(payload)
-        .eq('id', editingPropertyId)
-      error = updateError
+
+    // ⚠️ Se for selecionada a categoria Área Comum, salva na tabela property_common_areas
+    if (entryCategory === 'common_area') {
+      const payload = {
+        client_id: selectedClientIdForProperty,
+        name: propertyName,
+        client_price: parseFloat(propertyDefaultPrice) || 0,
+        cleaner_price: parseFloat(propertyDefaultPayout) || 0,
+      }
+
+      if (editingPropertyId) {
+        const { error: updateError } = await supabase
+          .from('property_common_areas')
+          .update(payload)
+          .eq('id', editingPropertyId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase
+          .from('property_common_areas')
+          .insert([payload])
+        error = insertError
+      }
     } else {
-      const { error: insertError } = await supabase
-        .from('properties')
-        .insert([payload])
-      error = insertError
+      // Caso seja Unidade regular, salva na tabela properties
+      const payload: Record<string, any> = {
+        client_id: selectedClientIdForProperty,
+        name: propertyName,
+        address: propertyAddress,
+        is_complex: isBelongsToComplex,
+      }
+
+      if (propertyType) payload.property_type = propertyType
+      if (propertyDefaultPrice) payload.price_standard = parseFloat(propertyDefaultPrice) || 0
+      if (propertyDefaultPayout) payload.cleaner_payout = parseFloat(propertyDefaultPayout) || 0
+
+      if (editingPropertyId) {
+        const { error: updateError } = await supabase
+          .from('properties')
+          .update(payload)
+          .eq('id', editingPropertyId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase
+          .from('properties')
+          .insert([payload])
+        error = insertError
+      }
     }
 
     if (!error) {
       setShowPropertyModal(false)
       fetchClientsAndProperties()
     } else {
-      alert('Erro ao salvar unidade: ' + error.message)
+      alert('Erro ao salvar: ' + error.message)
     }
     setSaving(false)
   }
@@ -319,6 +382,17 @@ export default function ClientsPage() {
     }
   }
 
+  const handleDeleteCommonArea = async (areaId: string) => {
+    if (!confirm('Deseja remover esta área comum?')) return
+
+    const { error } = await supabase.from('property_common_areas').delete().eq('id', areaId)
+    if (!error) {
+      fetchClientsAndProperties()
+    } else {
+      alert('Erro ao remover área comum: ' + error.message)
+    }
+  }
+
   const toggleExpand = (id: string) => {
     setExpandedClientId(expandedClientId === id ? null : id)
   }
@@ -326,7 +400,7 @@ export default function ClientsPage() {
   const renderBadgeType = (type: string) => {
     switch (type) {
       case 'complex':
-        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Complexo / Prédios</span>
+        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Building2 className="w-3 h-3" /> Complexo / Prédios</span>
       case 'vacation':
       case 'stelar':
         return <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">Vacation Rentals</span>
@@ -369,6 +443,7 @@ export default function ClientsPage() {
             {clients.map((client) => {
               const isExpanded = expandedClientId === client.id
               const propertyCount = client.properties?.length || 0
+              const commonAreasCount = client.common_areas?.length || 0
 
               return (
                 <div key={client.id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -381,6 +456,11 @@ export default function ClientsPage() {
                         <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                           <Home className="w-3 h-3" /> {propertyCount} {propertyCount === 1 ? 'Unidade' : 'Unidades'}
                         </span>
+                        {commonAreasCount > 0 && (
+                          <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <Layers className="w-3 h-3" /> {commonAreasCount} Áreas Comuns
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" /> {client.address || 'Endereço principal não informado'}
@@ -401,7 +481,7 @@ export default function ClientsPage() {
                         onClick={() => handleOpenAddPropertyModal(client.id)}
                         className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg flex items-center gap-1 transition cursor-pointer font-medium"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Unidade
+                        <Plus className="w-3.5 h-3.5" /> Item / Área
                       </button>
 
                       <button
@@ -487,7 +567,7 @@ export default function ClientsPage() {
                           <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
                         </h4>
                         {propertyCount === 0 ? (
-                          <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada. Clique no botão "+ Unidade" para adicionar.</p>
+                          <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada.</p>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {client.properties?.map((prop) => (
@@ -501,6 +581,11 @@ export default function ClientsPage() {
                                     {prop.property_type && (
                                       <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
                                         {prop.property_type}
+                                      </span>
+                                    )}
+                                    {(prop.is_complex || prop.complex_id) && (
+                                      <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                                        <Building2 className="w-2.5 h-2.5" /> Complexo
                                       </span>
                                     )}
                                   </div>
@@ -527,7 +612,7 @@ export default function ClientsPage() {
                                     className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
                                     title="Remover Unidade"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -535,6 +620,55 @@ export default function ClientsPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Lista de Áreas Comuns */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-teal-400" /> Áreas Comuns
+                        </h4>
+                        {commonAreasCount === 0 ? (
+                          <p className="text-xs text-slate-500 italic">Nenhuma área comum cadastrada.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {client.common_areas?.map((area) => (
+                              <div
+                                key={area.id}
+                                className="bg-slate-800 p-3 rounded-lg border border-teal-500/30 flex items-center justify-between text-xs"
+                              >
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-white">{area.name}</span>
+                                    <span className="text-[10px] bg-teal-500/20 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 rounded font-medium">
+                                      Área Comum
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-emerald-400 font-medium block mt-1">
+                                    Cobrança: {formatUSD(area.client_price)} | Repasse: {formatUSD(area.cleaner_price)}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleOpenEditCommonAreaModal(area)}
+                                    className="text-slate-400 hover:text-teal-400 p-1.5 rounded transition cursor-pointer"
+                                    title="Editar Área Comum"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCommonArea(area.id)}
+                                    className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
+                                    title="Remover Área Comum"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -673,7 +807,7 @@ export default function ClientsPage() {
                     <div key={idx} className="flex items-center gap-2">
                       <select
                         value={c.type}
-                        onChange={(e) => handleUpdateContact(idx, 'type', e.target.value as any)}
+                        onChange={(e) => handleUpdateContact(idx, 'type', e.target.value as 'phone' | 'email')}
                         className="bg-slate-900 border border-slate-700 text-xs rounded p-2 text-white"
                       >
                         <option value="phone">Telefone</option>
@@ -794,47 +928,94 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Modal Criar/Editar Unidade */}
+      {/* Modal Criar/Editar Unidade ou Área Comum */}
       {showPropertyModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 shadow-2xl space-y-4">
             <h2 className="text-lg font-bold text-white">
-              {editingPropertyId ? 'Editar Unidade' : 'Adicionar Nova Unidade'}
+              {editingPropertyId ? 'Editar Item' : 'Adicionar Novo Item / Área'}
             </h2>
+
+            {/* Selector de Categoria (Unidade vs Área Comum) */}
+            <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setEntryCategory('unit')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition ${
+                  entryCategory === 'unit'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Unidade Residencial
+              </button>
+              <button
+                type="button"
+                onClick={() => setEntryCategory('common_area')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition ${
+                  entryCategory === 'common_area'
+                    ? 'bg-teal-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Área Comum
+              </button>
+            </div>
+
             <form onSubmit={handleSaveProperty} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Identificação / Nº da Unidade *</label>
+                <label className="block text-xs text-slate-400 mb-1">
+                  {entryCategory === 'common_area' ? 'Nome da Área Comum *' : 'Identificação / Nº da Unidade *'}
+                </label>
                 <input
                   type="text"
                   required
                   value={propertyName}
                   onChange={(e) => setPropertyName(e.target.value)}
-                  placeholder="Ex: Apto 102 / Unidade B / Jetty East"
+                  placeholder={entryCategory === 'common_area' ? 'Ex: Elevadores, Banheiros, Salão' : 'Ex: Apto 102 / Unidade B'}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Endereço Completo</label>
-                <input
-                  type="text"
-                  value={propertyAddress}
-                  onChange={(e) => setPropertyAddress(e.target.value)}
-                  placeholder="Endereço da unidade"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
+              {entryCategory === 'unit' && (
+                <>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Endereço Completo</label>
+                    <input
+                      type="text"
+                      value={propertyAddress}
+                      onChange={(e) => setPropertyAddress(e.target.value)}
+                      placeholder="Endereço da unidade"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Tipologia / Layout</label>
-                <input
-                  type="text"
-                  value={propertyType}
-                  onChange={(e) => setPropertyType(e.target.value)}
-                  placeholder="Ex: 1x1, 2x2, Studio"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Tipologia / Layout</label>
+                    <input
+                      type="text"
+                      value={propertyType}
+                      onChange={(e) => setPropertyType(e.target.value)}
+                      placeholder="Ex: 1x1, 2x2, Studio"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="bg-slate-900/60 p-3 rounded-lg border border-purple-500/30">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isBelongsToComplex}
+                        onChange={(e) => setIsBelongsToComplex(e.target.checked)}
+                        className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-xs font-medium text-purple-300 flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5" /> Esta unidade pertence a um Complexo / Prédio?
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <div>
@@ -872,9 +1053,13 @@ export default function ClientsPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                  className={`px-4 py-2 ${
+                    entryCategory === 'common_area'
+                      ? 'bg-teal-600 hover:bg-teal-500'
+                      : 'bg-indigo-600 hover:bg-indigo-500'
+                  } text-white rounded-lg text-sm font-medium transition disabled:opacity-50`}
                 >
-                  {saving ? 'Salvando...' : editingPropertyId ? 'Atualizar Unidade' : 'Adicionar Unidade'}
+                  {saving ? 'Salvando...' : editingPropertyId ? 'Atualizar Item' : 'Adicionar Item'}
                 </button>
               </div>
             </form>

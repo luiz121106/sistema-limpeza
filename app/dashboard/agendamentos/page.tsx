@@ -25,13 +25,7 @@ interface Client {
   id: string
   name: string
   address?: string
-}
-
-interface Property {
-  id: string
-  client_id: string
-  name: string
-  address: string
+  client_type?: string
 }
 
 interface Cleaner {
@@ -55,7 +49,6 @@ interface Job {
   status: 'pending' | 'in_progress' | 'completed'
   notes?: string
   clients?: Client
-  properties?: Property
   cleaners?: Cleaner
 }
 
@@ -64,6 +57,15 @@ interface CalendarDay {
   label: string
   isToday: boolean
   isCurrentMonth: boolean
+}
+
+export interface PropertyCommonArea {
+  id: string
+  property_id?: string
+  client_id?: string
+  name: string
+  client_price: number
+  cleaner_price: number
 }
 
 const SERVICE_TYPE_STYLES: Record<string, { bg: string; border: string; badge: string; label: string }> = {
@@ -110,7 +112,6 @@ export default function CalendarPage() {
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'list'>('month')
   const [jobs, setJobs] = useState<Job[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [properties, setProperties] = useState<Property[]>([])
   const [cleaners, setCleaners] = useState<Cleaner[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -118,8 +119,7 @@ export default function CalendarPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
   const [clientId, setClientId] = useState('')
-  const [propertyId, setPropertyId] = useState('')
-  const [availableProperties, setAvailableProperties] = useState<Property[]>([])
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [unitDetails, setUnitDetails] = useState('')
   const [cleanerId, setCleanerId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
@@ -131,7 +131,10 @@ export default function CalendarPage() {
   const [extraPayout, setExtraPayout] = useState('0')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
-
+  const [targetType, setTargetType] = useState<'unit' | 'common_area'>('unit')
+  const [availableAreas, setAvailableAreas] = useState<PropertyCommonArea[]>([])
+  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([])
+  
   // Recorrência
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrenceFrequency, setRecurrenceFrequency] = useState('weekly')
@@ -144,20 +147,18 @@ export default function CalendarPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [jobsRes, clientsRes, propsRes, cleanersRes] = await Promise.all([
+      const [jobsRes, clientsRes, cleanersRes] = await Promise.all([
         supabase
           .from('jobs')
-          .select('*, clients(*), properties(*), cleaners(*)')
+          .select('*, clients(*), cleaners(*)')
           .order('scheduled_date', { ascending: true })
           .order('scheduled_time', { ascending: true }),
         supabase.from('clients').select('*').order('name'),
-        supabase.from('properties').select('*').order('name'),
         supabase.from('cleaners').select('*').order('name')
       ])
 
       if (jobsRes.data) setJobs(jobsRes.data as Job[])
       if (clientsRes.data) setClients(clientsRes.data)
-      if (propsRes.data) setProperties(propsRes.data)
       if (cleanersRes.data) setCleaners(cleanersRes.data)
     } catch (err) {
       console.error('Erro ao buscar dados:', err)
@@ -166,10 +167,60 @@ export default function CalendarPage() {
     }
   }
 
-  // Extrai o nome da unidade/imóvel ou especificação do campo notes
-  const getJobUnitLabel = (job: Job) => {
-    if (job.properties?.name) {
-      return job.properties.name
+  // Corrigido: Busca na tabela 'property_common_areas' filtrando pelo client_id
+  useEffect(() => {
+    if (clientId && targetType === 'common_area') {
+      supabase
+        .from('property_common_areas')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('name')
+        .then(({ data, error }) => {
+          if (!error && data) {
+            const formatted = data.map((item) => ({
+              id: item.id,
+              name: item.name,
+              client_price: Number(item.client_price || 0),
+              cleaner_price: Number(item.cleaner_price || 0)
+            }))
+            setAvailableAreas(formatted)
+          } else {
+            setAvailableAreas([])
+          }
+        })
+    } else {
+      setAvailableAreas([])
+    }
+  }, [clientId, targetType])
+
+  // Somar automaticamente os valores das áreas selecionadas
+  const handleToggleArea = (area: PropertyCommonArea) => {
+    const isSelected = selectedAreaIds.includes(area.id)
+    let updatedIds: string[]
+
+    if (isSelected) {
+      updatedIds = selectedAreaIds.filter((id) => id !== area.id)
+    } else {
+      updatedIds = [...selectedAreaIds, area.id]
+    }
+
+    setSelectedAreaIds(updatedIds)
+
+    const selectedItems = availableAreas.filter((a) => updatedIds.includes(a.id))
+    const totalClientPrice = selectedItems.reduce((acc, curr) => acc + Number(curr.client_price || 0), 0)
+    const totalCleanerPrice = selectedItems.reduce((acc, curr) => acc + Number(curr.cleaner_price || 0), 0)
+
+    setPrice(totalClientPrice.toString())
+    setPayout(totalCleanerPrice.toString())
+  }
+  
+  // Extrai o nome da unidade/imóvel ou áreas comuns selecionadas
+  const getJobUnitLabel = (job: any) => {
+    if (job.target_type === 'common_area' && job.selected_common_areas && Array.isArray(job.selected_common_areas)) {
+      return job.selected_common_areas.map((a: any) => a.name).join(', ')
+    }
+    if (job.unit_details) {
+      return job.unit_details
     }
     if (job.notes) {
       const match = job.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
@@ -183,13 +234,12 @@ export default function CalendarPage() {
   // Troca de cliente no modal
   const handleClientChange = (selectedClientId: string) => {
     setClientId(selectedClientId)
-    const props = properties.filter((p) => p.client_id === selectedClientId)
-    setAvailableProperties(props)
-    setPropertyId('')
-  }
+    const client = clients.find((c) => c.id === selectedClientId) || null
+    setSelectedClient(client)
 
-  const handlePropertyChange = (selectedPropId: string) => {
-    setPropertyId(selectedPropId)
+    setTargetType('unit')
+    setUnitDetails('')
+    setSelectedAreaIds([])
   }
 
   const handleServiceTypeChange = (type: string) => {
@@ -199,8 +249,7 @@ export default function CalendarPage() {
   const handleOpenNewModal = (initialDate?: string) => {
     setEditingJobId(null)
     setClientId('')
-    setPropertyId('')
-    setAvailableProperties([])
+    setSelectedClient(null)
     setUnitDetails('')
     setCleanerId('')
     setScheduledDate(initialDate || new Date().toISOString().split('T')[0])
@@ -214,6 +263,8 @@ export default function CalendarPage() {
     setIsRecurring(false)
     setRecurrenceFrequency('weekly')
     setRecurrenceUntil('')
+    setTargetType('unit')
+    setSelectedAreaIds([])
     setShowModal(true)
   }
 
@@ -221,11 +272,9 @@ export default function CalendarPage() {
     setEditingJobId(job.id)
     setClientId(job.client_id || '')
 
-    const props = properties.filter((p) => p.client_id === job.client_id)
-    setAvailableProperties(props)
-    setPropertyId(job.property_id || '')
+    const client = clients.find((c) => c.id === job.client_id) || null
+    setSelectedClient(client)
 
-    // Extrai especificação antiga se existir em notes
     let cleanNotes = job.notes || ''
     const match = cleanNotes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
     if (match) {
@@ -257,16 +306,21 @@ export default function CalendarPage() {
 
     setSaving(true)
 
-    // Formata o campo de notas incluindo a especificação de unidade se houver
     let finalNotes = notes.trim()
-    if (unitDetails.trim()) {
+    if (targetType === 'unit' && unitDetails.trim()) {
       const tag = `[Unidade/Especificação: ${unitDetails.trim()}]`
+      finalNotes = finalNotes ? `${tag}\n${finalNotes}` : tag
+    } else if (targetType === 'common_area' && selectedAreaIds.length > 0) {
+      const selectedNames = availableAreas
+        .filter((a) => selectedAreaIds.includes(a.id))
+        .map((a) => a.name)
+        .join(', ')
+      const tag = `[Área Comum: ${selectedNames}]`
       finalNotes = finalNotes ? `${tag}\n${finalNotes}` : tag
     }
 
     const payload = {
       client_id: clientId,
-      property_id: propertyId || null,
       cleaner_id: cleanerId || null,
       scheduled_date: scheduledDate,
       scheduled_time: scheduledTime,
@@ -328,7 +382,7 @@ export default function CalendarPage() {
     const newDate = prompt('Digite a nova data para a cópia (AAAA-MM-DD):', job.scheduled_date)
     if (!newDate) return
 
-    const { id, clients, properties, cleaners, ...copyData } = job
+    const { id, clients, cleaners, ...copyData } = job
     const payload = {
       ...copyData,
       scheduled_date: newDate,
@@ -486,10 +540,9 @@ export default function CalendarPage() {
         </button>
       </header>
 
-      {/* Controles do Calendário estilo Google Agenda */}
+      {/* Controles do Calendário */}
       <main className="flex-1 p-4 lg:p-6 max-w-7xl mx-auto w-full space-y-4 flex flex-col">
         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-3">
-          {/* Controles de Navegação */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleNavigate('today')}
@@ -520,7 +573,6 @@ export default function CalendarPage() {
             </span>
           </div>
 
-          {/* Seleção do Modo de Exibição */}
           <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700 w-full md:w-auto">
             <button
               type="button"
@@ -598,7 +650,7 @@ export default function CalendarPage() {
                       </div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                        {job.properties?.address || job.clients?.address || 'Endereço não informado'}
+                        {job.clients?.address || 'Endereço não informado'}
                       </p>
                     </div>
 
@@ -634,7 +686,7 @@ export default function CalendarPage() {
             )}
           </div>
         ) : (
-          /* MODO GRADE/CALENDÁRIO (DIA, SEMANA OU MÊS) */
+          /* MODO GRADE/CALENDÁRIO */
           <div
             className={`grid gap-2 flex-1 ${
               viewMode === 'day'
@@ -658,7 +710,6 @@ export default function CalendarPage() {
                       : 'border-slate-800 opacity-40'
                   }`}
                 >
-                  {/* Cabeçalho do Dia */}
                   <div className="flex items-center justify-between border-b border-slate-700/50 pb-1.5 mb-2">
                     <span
                       className={`text-xs font-bold uppercase tracking-wider ${
@@ -677,7 +728,6 @@ export default function CalendarPage() {
                     </button>
                   </div>
 
-                  {/* Lista de Limpezas do Dia */}
                   <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[420px]">
                     {dayJobs.length === 0 ? (
                       <p className="text-[10px] text-slate-500 italic text-center py-4">Sem limpezas</p>
@@ -714,7 +764,6 @@ export default function CalendarPage() {
                               </span>
                             </div>
 
-                            {/* Detalhes extras e Unidades/Apartamentos no card */}
                             {unitLabel && (
                               <p className="text-[10px] text-purple-300 truncate flex items-center gap-1 font-medium bg-purple-950/40 px-1 py-0.5 rounded border border-purple-800/40">
                                 <Home className="w-2.5 h-2.5 text-purple-400 flex-shrink-0" /> {unitLabel}
@@ -722,33 +771,29 @@ export default function CalendarPage() {
                             )}
 
                             {assignedCleaner && (
-  <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
-    <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
-  </p>
-)}
+                              <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
+                                <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
+                              </p>
+                            )}
 
-{/* Botão do Google Maps para os Gerentes */}
-{(() => {
-  const fullAddress = job.properties?.address || job.clients?.address
-  if (!fullAddress) return null
+                            {(() => {
+                              const fullAddress = job.clients?.address
+                              if (!fullAddress) return null
 
-  return (
-    <a
-      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium hover:underline truncate w-fit pt-0.5"
-      title="Abrir endereço no Google Maps"
-    >
-      <MapPin className="w-2.5 h-2.5 text-sky-400 flex-shrink-0" />
-      <span className="truncate max-w-[130px]">{fullAddress}</span>
-    </a>
-  )
-})()}
+                              return (
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium hover:underline truncate w-fit pt-0.5"
+                                  title="Abrir endereço no Google Maps"
+                                >
+                                  <MapPin className="w-2.5 h-2.5 text-sky-400 flex-shrink-0" />
+                                  <span className="truncate max-w-[130px]">{fullAddress}</span>
+                                </a>
+                              )
+                            })()}
 
-{/* Botões de Ação Rápida */}
-
-                            {/* Botões de Ação Rápida */}
                             <div className="flex items-center justify-between pt-1 border-t border-slate-700/50 mt-1">
                               <select
                                 value={job.status}
@@ -819,43 +864,70 @@ export default function CalendarPage() {
                 </select>
               </div>
 
-              {/* Seletor de Unidades Cadastradas do Cliente */}
+              {/* Seletor de Tipo (Unidade x Área Comum) e seus respectivos inputs */}
               {clientId && (
                 <div className="space-y-3">
-                  {availableProperties.length > 0 ? (
+                  <div className="flex gap-2 mb-3 bg-slate-800 p-1 rounded-lg border border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setTargetType('unit')}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
+                        targetType === 'unit' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Unidade / Bloco
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTargetType('common_area')}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
+                        targetType === 'common_area' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Área Comum
+                    </button>
+                  </div>
+
+                  {targetType === 'unit' ? (
                     <div>
-                      <label className="block text-xs text-emerald-400 mb-1 font-semibold">
-                        Selecione a Unidade / Imóvel de Vacation *
-                      </label>
-                      <select
-                        value={propertyId}
-                        onChange={(e) => handlePropertyChange(e.target.value)}
-                        className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white font-medium"
-                      >
-                        <option value="">Selecione uma unidade do cliente...</option>
-                        {availableProperties.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} — {p.address}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="block text-xs text-slate-400 mb-1">Especificação da Unidade (Bloco, Apt, Tamanho...)</label>
+                      <input
+                        type="text"
+                        value={unitDetails}
+                        onChange={(e) => setUnitDetails(e.target.value)}
+                        placeholder="Ex: Bloco A, Apt 302 - 2 Quartos..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                      />
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 italic">
-                      Este cliente não possui unidades cadastradas (será usado o endereço padrão).
-                    </p>
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400">Selecione as Áreas Solicitadas:</label>
+                      {availableAreas.length === 0 ? (
+                        <p className="text-xs text-amber-400 italic bg-amber-950/30 p-2 rounded border border-amber-800/40">
+                          Nenhuma Área Comum cadastrada para este cliente.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto p-2 bg-slate-900 rounded-lg border border-slate-700">
+                          {availableAreas.map((area) => (
+                            <label key={area.id} className="flex items-center justify-between text-xs text-slate-200 cursor-pointer p-1 hover:bg-slate-800 rounded">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedAreaIds.includes(area.id)}
+                                  onChange={() => handleToggleArea(area)}
+                                  className="rounded border-slate-700 text-emerald-500 focus:ring-0"
+                                />
+                                <span>{area.name}</span>
+                              </div>
+                              <span className="text-slate-400 text-[10px]">
+                                Cliente: ${area.client_price} | Repasse: ${area.cleaner_price}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
-
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Especificação Extra (Ex: Apto / Bloco / Área)</label>
-                    <input
-                      type="text"
-                      value={unitDetails}
-                      onChange={(e) => setUnitDetails(e.target.value)}
-                      placeholder="Ex: Apt 302, Bloco B, Área Externa..."
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
-                    />
-                  </div>
                 </div>
               )}
 
