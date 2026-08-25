@@ -722,10 +722,31 @@ export default function CalendarPage() {
                             )}
 
                             {assignedCleaner && (
-                              <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
-                                <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
-                              </p>
-                            )}
+  <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
+    <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
+  </p>
+)}
+
+{/* Botão do Google Maps para os Gerentes */}
+{(() => {
+  const fullAddress = job.properties?.address || job.clients?.address
+  if (!fullAddress) return null
+
+  return (
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium hover:underline truncate w-fit pt-0.5"
+      title="Abrir endereço no Google Maps"
+    >
+      <MapPin className="w-2.5 h-2.5 text-sky-400 flex-shrink-0" />
+      <span className="truncate max-w-[130px]">{fullAddress}</span>
+    </a>
+  )
+})()}
+
+{/* Botões de Ação Rápida */}
 
                             {/* Botões de Ação Rápida */}
                             <div className="flex items-center justify-between pt-1 border-t border-slate-700/50 mt-1">
