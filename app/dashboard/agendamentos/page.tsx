@@ -48,6 +48,9 @@ interface Job {
   extra_payout?: number
   status: 'pending' | 'in_progress' | 'completed'
   notes?: string
+  target_type?: 'unit' | 'common_area'
+  selected_common_areas?: any[]
+  unit_details?: string
   clients?: Client
   cleaners?: Cleaner
 }
@@ -167,7 +170,7 @@ export default function CalendarPage() {
     }
   }
 
-  // Corrigido: Busca na tabela 'property_common_areas' filtrando pelo client_id
+  // Busca na tabela 'property_common_areas' filtrando pelo client_id
   useEffect(() => {
     if (clientId && targetType === 'common_area') {
       supabase
@@ -223,9 +226,13 @@ export default function CalendarPage() {
       return job.unit_details
     }
     if (job.notes) {
-      const match = job.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
-      if (match && match[1]) {
-        return match[1].trim()
+      const matchUnit = job.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+      if (matchUnit && matchUnit[1]) {
+        return matchUnit[1].trim()
+      }
+      const matchArea = job.notes.match(/\[Área Comum:\s*([^\]]+)\]/)
+      if (matchArea && matchArea[1]) {
+        return matchArea[1].trim()
       }
     }
     return null
@@ -276,12 +283,42 @@ export default function CalendarPage() {
     setSelectedClient(client)
 
     let cleanNotes = job.notes || ''
-    const match = cleanNotes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
-    if (match) {
-      setUnitDetails(match[1].trim())
+    const matchUnit = cleanNotes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+    const matchArea = cleanNotes.match(/\[Área Comum:\s*([^\]]+)\]/)
+
+    if (matchUnit) {
+      setTargetType('unit')
+      setUnitDetails(matchUnit[1].trim())
       cleanNotes = cleanNotes.replace(/\[Unidade\/Especificação:\s*[^\]]+\]\n?/, '').trim()
+    } else if (matchArea) {
+      setTargetType('common_area')
+      const areaNames = matchArea[1].split(',').map((s) => s.trim())
+      cleanNotes = cleanNotes.replace(/\[Área Comum:\s*[^\]]+\]\n?/, '').trim()
+      
+      // Carrega as áreas para preencher os checkboxes selecionados
+      supabase
+        .from('property_common_areas')
+        .select('*')
+        .eq('client_id', job.client_id)
+        .then(({ data }) => {
+          if (data) {
+            const formatted = data.map((item) => ({
+              id: item.id,
+              name: item.name,
+              client_price: Number(item.client_price || 0),
+              cleaner_price: Number(item.cleaner_price || 0)
+            }))
+            setAvailableAreas(formatted)
+            const matchedIds = formatted
+              .filter((a) => areaNames.includes(a.name))
+              .map((a) => a.id)
+            setSelectedAreaIds(matchedIds)
+          }
+        })
     } else {
+      setTargetType('unit')
       setUnitDetails('')
+      setSelectedAreaIds([])
     }
 
     setCleanerId(job.cleaner_id || '')

@@ -44,6 +44,7 @@ export default function LimpadoresPage() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPhone, setEditPhone] = useState('')
+  const [editActive, setEditActive] = useState(true)
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -103,6 +104,7 @@ export default function LimpadoresPage() {
     setEditName(cleaner.name)
     setEditEmail(cleaner.email || '')
     setEditPhone(cleaner.phone || '')
+    setEditActive(cleaner.active)
     setEditError('')
   }
 
@@ -120,6 +122,7 @@ export default function LimpadoresPage() {
         name: editName,
         email: editEmail || null,
         phone: editPhone || null,
+        active: editActive,
       })
       .eq('id', editingCleaner.id)
 
@@ -139,7 +142,7 @@ export default function LimpadoresPage() {
     if (!confirm('Deseja realmente excluir este limpador? O acesso dele será revogado.')) return
 
     try {
-      const response = await fetch('/api/delete-cleaner', {
+      const response = await fetch('/api/cleaners/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cleanerId }),
@@ -253,8 +256,12 @@ export default function LimpadoresPage() {
                     )}
                   </div>
 
-                  <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span className={`border text-[10px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                    cleaner.active 
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${cleaner.active ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
                     {cleaner.active ? 'Ativo' : 'Inativo'}
                   </span>
                 </div>
@@ -450,6 +457,19 @@ export default function LimpadoresPage() {
                   onChange={(e) => setEditPhone(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="activeCheck"
+                  checked={editActive}
+                  onChange={(e) => setEditActive(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+                />
+                <label htmlFor="activeCheck" className="text-xs font-medium text-slate-300">
+                  Limpador ativo na equipe
+                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
