@@ -46,7 +46,7 @@ export async function POST(request: Request) {
             <p style="margin: 5px 0;"><strong>📅 Data:</strong> ${formattedDate}</p>
             <p style="margin: 5px 0;"><strong>⏰ Horário:</strong> ${time}</p>
             <p style="margin: 5px 0;"><strong>📍 Endereço:</strong> ${address}</p>
-            ${formattedPayout ? `<p style="margin: 5px 0;"><strong>💵 Seu Repasse:</strong> ${formattedPayout}</p>` : ''}
+            ${formattedPayout ? `<p style="margin: 5px 0;"><strong>💵 Valor de Serviço:</strong> ${formattedPayout}</p>` : ''}
           </div>
 
           <p style="font-size: 13px; color: #6b7280;">Por favor, certifique-se de chegar ao local no horário combinado.</p>
