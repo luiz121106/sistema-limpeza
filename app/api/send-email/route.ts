@@ -27,6 +27,11 @@ export async function POST(request: Request) {
 
     const formattedDate = date ? date.split('-').reverse().join('/') : date
 
+    // Formata o repasse em Dólar (USD) mantendo duas casas decimais
+    const formattedPayout = payout 
+      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(payout))
+      : null
+
     const info = await transporter.sendMail({
       from: `"Sistema de Limpeza" <${process.env.GMAIL_USER}>`,
       to: cleanerEmail,
@@ -41,7 +46,7 @@ export async function POST(request: Request) {
             <p style="margin: 5px 0;"><strong>📅 Data:</strong> ${formattedDate}</p>
             <p style="margin: 5px 0;"><strong>⏰ Horário:</strong> ${time}</p>
             <p style="margin: 5px 0;"><strong>📍 Endereço:</strong> ${address}</p>
-            ${payout ? `<p style="margin: 5px 0;"><strong>💵 Valor do Serviço:</strong> $${payout}</p>` : ''}
+            ${formattedPayout ? `<p style="margin: 5px 0;"><strong>💵 Seu Repasse:</strong> ${formattedPayout}</p>` : ''}
           </div>
 
           <p style="font-size: 13px; color: #6b7280;">Por favor, certifique-se de chegar ao local no horário combinado.</p>
