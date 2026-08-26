@@ -8,14 +8,14 @@ import Link from 'next/link'
 interface Property {
   id: string
   client_id: string
-  complex_id?: string | null
-  is_complex?: boolean
   name: string
-  address: string
-  property_type: string
-  price_standard: number
-  cleaner_payout: number
-  is_common_area?: boolean
+  address?: string
+  property_type?: string
+  price_standard?: number | null
+  cleaner_payout?: number | null
+  default_payout?: number | null
+  client_price?: number | null
+  cleaner_price?: number | null
 }
 
 interface CommonArea {
@@ -42,7 +42,7 @@ interface Client {
   id: string
   name: string
   address: string
-  client_type: 'residential' | 'commercial' | 'vacation' | 'complex' | string
+  client_type: string
   price_standard: number
   price_heavy: number
   price_move_in_out: number
@@ -56,7 +56,6 @@ interface Client {
   common_areas?: CommonArea[]
 }
 
-// Helpers de formatação no padrão EUA
 const formatUSD = (amount: number | string | undefined | null): string => {
   const numericValue = typeof amount === 'string' ? parseFloat(amount) : amount
   if (numericValue === undefined || numericValue === null || isNaN(numericValue)) {
@@ -100,7 +99,7 @@ export default function ClientsPage() {
   const [notes, setNotes] = useState('')
   const [adminNotes, setAdminNotes] = useState('')
 
-  // Múltiplos Contatos e Credenciais
+  // Contatos e Credenciais
   const [contacts, setContacts] = useState<Contact[]>([])
   const [credentials, setCredentials] = useState<Credential[]>([])
 
@@ -113,50 +112,59 @@ export default function ClientsPage() {
   const [propertyType, setPropertyType] = useState('1x1')
   const [propertyDefaultPrice, setPropertyDefaultPrice] = useState('')
   const [propertyDefaultPayout, setPropertyDefaultPayout] = useState('')
-  const [isBelongsToComplex, setIsBelongsToComplex] = useState(false)
-  
-  // ⚠️ Novo estado para diferenciar Unidade de Área Comum
-  const [entryCategory, setEntryCategory] = useState<'unit' | 'common_area'>('unit')
 
+  const [entryCategory, setEntryCategory] = useState<'unit' | 'common_area'>('unit')
   const [saving, setSaving] = useState(false)
 
   const fetchClientsAndProperties = async () => {
     setLoading(true)
+    try {
+      const { data: clientsData, error: clientErr } = await supabase
+        .from('clients')
+        .select('*')
+        .order('name')
 
-    const { data: clientsData, error: clientErr } = await supabase
-      .from('clients')
-      .select('*')
-      .order('name')
+      const { data: propertiesData, error: propErr } = await supabase
+        .from('properties')
+        .select('*')
+        .order('name')
 
-    const { data: propertiesData } = await supabase
-      .from('properties')
-      .select('*')
-      .order('name')
+      const { data: commonAreasData, error: caErr } = await supabase
+        .from('property_common_areas')
+        .select('*')
+        .order('name')
 
-    const { data: commonAreasData } = await supabase
-      .from('property_common_areas')
-      .select('*')
-      .order('name')
+      if (clientErr) console.error('Erro ao carregar clientes:', clientErr)
+      if (propErr) console.error('Erro ao carregar propriedades:', propErr)
+      if (caErr) console.error('Erro ao carregar áreas comuns:', caErr)
 
-    if (!clientErr && clientsData) {
-      const merged = clientsData.map((client) => ({
-        ...client,
-        contacts: Array.isArray(client.contacts) ? client.contacts : [],
-        access_credentials: Array.isArray(client.access_credentials) ? client.access_credentials : [],
-        properties: (propertiesData || []).filter((p) => p.client_id === client.id),
-        common_areas: (commonAreasData || []).filter((ca) => ca.client_id === client.id),
-      }))
-      setClients(merged)
+      if (clientsData) {
+        const merged = clientsData.map((client) => ({
+          ...client,
+          contacts: Array.isArray(client.contacts) ? client.contacts : [],
+          access_credentials: Array.isArray(client.access_credentials) ? client.access_credentials : [],
+          properties: (propertiesData || [])
+            .filter((p) => p.client_id === client.id)
+            .map((p) => ({
+              ...p,
+              client_price: p.price_standard ?? 0,
+              cleaner_price: p.cleaner_payout ?? p.default_payout ?? 0,
+            })),
+          common_areas: (commonAreasData || []).filter((ca) => ca.client_id === client.id),
+        }))
+        setClients(merged)
+      }
+    } catch (err) {
+      console.error('Erro inesperado:', err)
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   useEffect(() => {
     fetchClientsAndProperties()
   }, [])
 
-  // Handlers Contatos Dinâmicos
   const handleAddContact = () => {
     setContacts([...contacts, { type: 'phone', label: '', value: '' }])
   }
@@ -172,7 +180,6 @@ export default function ClientsPage() {
     setContacts(contacts.filter((_, i) => i !== index))
   }
 
-  // Handlers Credenciais Dinâmicas
   const handleAddCredential = () => {
     setCredentials([...credentials, { label: '', code: '' }])
   }
@@ -187,7 +194,6 @@ export default function ClientsPage() {
     setCredentials(credentials.filter((_, i) => i !== index))
   }
 
-  // Ações de Cliente
   const handleOpenNewClientModal = () => {
     setEditingClientId(null)
     setName('')
@@ -226,51 +232,56 @@ export default function ClientsPage() {
     e.preventDefault()
     setSaving(true)
 
-    const payload = {
-      name,
-      address,
-      client_type: clientType,
-      price_standard: parseFloat(priceStandard) || 0,
-      price_heavy: parseFloat(priceHeavy) || 0,
-      price_move_in_out: parseFloat(priceMoveInOut) || 0,
-      price_vacation: parseFloat(priceVacation) || 0,
-      cleaner_payout: parseFloat(cleanerPayout) || 0,
-      notes: notes || null,
-      admin_notes: adminNotes || null,
-      contacts,
-      access_credentials: credentials,
-    }
+    try {
+      const payload = {
+        name,
+        address,
+        client_type: clientType,
+        price_standard: parseFloat(priceStandard) || 0,
+        price_heavy: parseFloat(priceHeavy) || 0,
+        price_move_in_out: parseFloat(priceMoveInOut) || 0,
+        price_vacation: parseFloat(priceVacation) || 0,
+        cleaner_payout: parseFloat(cleanerPayout) || 0,
+        notes: notes || null,
+        admin_notes: adminNotes || null,
+        contacts,
+        access_credentials: credentials,
+      }
 
-    let error
-    if (editingClientId) {
-      const { error: updateError } = await supabase.from('clients').update(payload).eq('id', editingClientId)
-      error = updateError
-    } else {
-      const { error: insertError } = await supabase.from('clients').insert([payload])
-      error = insertError
-    }
+      let error
+      if (editingClientId) {
+        const { error: updateError } = await supabase.from('clients').update(payload).eq('id', editingClientId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase.from('clients').insert([payload])
+        error = insertError
+      }
 
-    if (!error) {
+      if (error) throw error
+
       setShowClientModal(false)
-      fetchClientsAndProperties()
-    } else {
-      alert('Erro ao salvar cliente: ' + error.message)
+      await fetchClientsAndProperties()
+    } catch (err: any) {
+      console.error('Erro ao salvar cliente:', err)
+      alert('Erro ao salvar cliente: ' + (err.message || 'Verifique o console.'))
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const handleDeleteClient = async (id: string) => {
     if (!confirm('Excluir este cliente removerá também suas unidades e histórico. Confirmar?')) return
 
-    const { error } = await supabase.from('clients').delete().eq('id', id)
-    if (!error) {
-      fetchClientsAndProperties()
-    } else {
-      alert('Erro ao excluir cliente: ' + error.message)
+    try {
+      const { error } = await supabase.from('clients').delete().eq('id', id)
+      if (error) throw error
+      await fetchClientsAndProperties()
+    } catch (err: any) {
+      console.error('Erro ao excluir cliente:', err)
+      alert('Erro ao excluir cliente: ' + err.message)
     }
   }
 
-  // Ações de Unidade / Área Comum
   const handleOpenAddPropertyModal = (clientId: string) => {
     setSelectedClientIdForProperty(clientId)
     setEditingPropertyId(null)
@@ -280,22 +291,32 @@ export default function ClientsPage() {
     setPropertyType('1x1')
     setPropertyDefaultPrice('')
     setPropertyDefaultPayout('')
-    setIsBelongsToComplex(false)
     setShowPropertyModal(true)
   }
 
   const handleOpenEditPropertyModal = (property: Property) => {
-    setSelectedClientIdForProperty(property.client_id)
-    setEditingPropertyId(property.id)
-    setEntryCategory('unit')
-    setPropertyName(property.name)
-    setPropertyAddress(property.address || '')
-    setPropertyType(property.property_type || '1x1')
-    setPropertyDefaultPrice(property.price_standard?.toString() || '0')
-    setPropertyDefaultPayout(property.cleaner_payout?.toString() || '0')
-    setIsBelongsToComplex(property.is_complex || !!property.complex_id)
-    setShowPropertyModal(true)
-  }
+  setSelectedClientIdForProperty(property.client_id)
+  setEditingPropertyId(property.id)
+  setEntryCategory('unit')
+  
+  setPropertyName(property.name || '')
+  setPropertyAddress(property.address || '')
+  setPropertyType(property.property_type || '1x1')
+
+  // Puxa o preço do cliente sem zerar se for número
+  const rawPrice = property.price_standard ?? property.client_price
+  setPropertyDefaultPrice(
+    rawPrice !== undefined && rawPrice !== null ? String(rawPrice) : ''
+  )
+
+  // Puxa o repasse sem zerar se for número
+  const rawPayout = property.cleaner_payout ?? property.default_payout ?? property.cleaner_price
+  setPropertyDefaultPayout(
+    rawPayout !== undefined && rawPayout !== null ? String(rawPayout) : ''
+  )
+
+  setShowPropertyModal(true)
+}
 
   const handleOpenEditCommonAreaModal = (area: CommonArea) => {
     setSelectedClientIdForProperty(area.client_id)
@@ -312,84 +333,95 @@ export default function ClientsPage() {
     if (!selectedClientIdForProperty) return
     setSaving(true)
 
-    let error
+    try {
+      if (entryCategory === 'common_area') {
+        const payload = {
+          client_id: selectedClientIdForProperty,
+          name: propertyName,
+          client_price: parseFloat(propertyDefaultPrice) || 0,
+          cleaner_price: parseFloat(propertyDefaultPayout) || 0,
+        }
 
-    // ⚠️ Se for selecionada a categoria Área Comum, salva na tabela property_common_areas
-    if (entryCategory === 'common_area') {
-      const payload = {
-        client_id: selectedClientIdForProperty,
-        name: propertyName,
-        client_price: parseFloat(propertyDefaultPrice) || 0,
-        cleaner_price: parseFloat(propertyDefaultPayout) || 0,
-      }
+        let error
+        if (editingPropertyId) {
+          const { error: updateError } = await supabase
+            .from('property_common_areas')
+            .update(payload)
+            .eq('id', editingPropertyId)
+          error = updateError
+        } else {
+          const { error: insertError } = await supabase
+            .from('property_common_areas')
+            .insert([payload])
+          error = insertError
+        }
 
-      if (editingPropertyId) {
-        const { error: updateError } = await supabase
-          .from('property_common_areas')
-          .update(payload)
-          .eq('id', editingPropertyId)
-        error = updateError
+        if (error) throw error
       } else {
-        const { error: insertError } = await supabase
-          .from('property_common_areas')
-          .insert([payload])
-        error = insertError
-      }
-    } else {
-      // Caso seja Unidade regular, salva na tabela properties
-      const payload: Record<string, any> = {
-        client_id: selectedClientIdForProperty,
-        name: propertyName,
-        address: propertyAddress,
-        is_complex: isBelongsToComplex,
+        const parsedPrice = parseFloat(propertyDefaultPrice) || 0
+        const parsedPayout = parseFloat(propertyDefaultPayout) || 0
+
+        // Payload estritamente compatível com as colunas da sua tabela 'properties'
+        const payload: Record<string, any> = {
+          client_id: selectedClientIdForProperty,
+          name: propertyName,
+          address: propertyAddress || null,
+          property_type: propertyType || '1x1',
+          price_standard: parsedPrice,
+          cleaner_payout: parsedPayout,
+          default_payout: parsedPayout // Preenche a coluna obrigatória mostrada no banco
+        }
+
+        let error
+        if (editingPropertyId) {
+          const { error: updateError } = await supabase
+            .from('properties')
+            .update(payload)
+            .eq('id', editingPropertyId)
+          error = updateError
+        } else {
+          const { error: insertError } = await supabase
+            .from('properties')
+            .insert([payload])
+          error = insertError
+        }
+
+        if (error) throw error
       }
 
-      if (propertyType) payload.property_type = propertyType
-      if (propertyDefaultPrice) payload.price_standard = parseFloat(propertyDefaultPrice) || 0
-      if (propertyDefaultPayout) payload.cleaner_payout = parseFloat(propertyDefaultPayout) || 0
-
-      if (editingPropertyId) {
-        const { error: updateError } = await supabase
-          .from('properties')
-          .update(payload)
-          .eq('id', editingPropertyId)
-        error = updateError
-      } else {
-        const { error: insertError } = await supabase
-          .from('properties')
-          .insert([payload])
-        error = insertError
-      }
-    }
-
-    if (!error) {
       setShowPropertyModal(false)
-      fetchClientsAndProperties()
-    } else {
-      alert('Erro ao salvar: ' + error.message)
+      await fetchClientsAndProperties()
+    } catch (err: any) {
+      console.error('Erro ao salvar item:', err)
+      alert('Erro de Banco de Dados: ' + (err.message || 'Erro desconhecido ao salvar propriedade.'))
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const handleDeleteProperty = async (propertyId: string) => {
     if (!confirm('Deseja remover esta unidade?')) return
 
-    const { error } = await supabase.from('properties').delete().eq('id', propertyId)
-    if (!error) {
-      fetchClientsAndProperties()
-    } else {
-      alert('Erro ao remover unidade: ' + error.message)
+    try {
+      const { error } = await supabase.from('properties').delete().eq('id', propertyId)
+      if (error) throw error
+      await fetchClientsAndProperties()
+    } catch (err: any) {
+      console.error('Erro ao remover unidade:', err)
+      alert('Erro ao remover unidade: ' + err.message)
     }
   }
 
   const handleDeleteCommonArea = async (areaId: string) => {
     if (!confirm('Deseja remover esta área comum?')) return
 
-    const { error } = await supabase.from('property_common_areas').delete().eq('id', areaId)
-    if (!error) {
-      fetchClientsAndProperties()
-    } else {
-      alert('Erro ao remover área comum: ' + error.message)
+    try {
+      const { error } = await supabase.from('property_common_areas').delete().eq('id', areaId)
+      if (error) throw error
+      await fetchClientsAndProperties()
+    } catch (err: any) {
+      console.error('Erro ao remover área comum:', err)
+      alert('Erro ao remover área comum: ' + err.message)
     }
   }
 
@@ -413,7 +445,6 @@ export default function ClientsPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
-      {/* Topbar */}
       <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">
@@ -429,7 +460,6 @@ export default function ClientsPage() {
         </button>
       </header>
 
-      {/* Lista de Clientes */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
         {loading ? (
           <p className="text-slate-400 text-center py-10">Carregando clientes...</p>
@@ -447,7 +477,6 @@ export default function ClientsPage() {
 
               return (
                 <div key={client.id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  {/* Cabeçalho do Card do Cliente */}
                   <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/80">
                     <div className="space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
@@ -467,7 +496,6 @@ export default function ClientsPage() {
                       </p>
                     </div>
 
-                    {/* Preços e Ações */}
                     <div className="flex flex-wrap items-center gap-3 text-xs">
                       <div className="flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700">
                         <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -511,15 +539,12 @@ export default function ClientsPage() {
                     </div>
                   </div>
 
-                  {/* Área Expandível */}
                   {isExpanded && (
                     <div className="bg-slate-900/60 p-4 border-t border-slate-700 space-y-4">
-                      
-                      {/* Senhas e Contatos Confidenciais (Admin Only) */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/90 p-3.5 rounded-xl border border-amber-500/20">
                         <div>
                           <h5 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 mb-2">
-                            <Shield className="w-3.5 h-3.5" /> Senhas e Acessos (Privado Admin)
+                            <Shield className="w-3.5 h-3.5" /> Senhas e Acessos
                           </h5>
                           {client.access_credentials && client.access_credentials.length > 0 ? (
                             <div className="space-y-1">
@@ -537,7 +562,7 @@ export default function ClientsPage() {
 
                         <div>
                           <h5 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 mb-2">
-                            <Phone className="w-3.5 h-3.5" /> Contatos Extras (Privado Admin)
+                            <Phone className="w-3.5 h-3.5" /> Contatos Extras
                           </h5>
                           {client.contacts && client.contacts.length > 0 ? (
                             <div className="space-y-1">
@@ -552,16 +577,8 @@ export default function ClientsPage() {
                             <p className="text-xs text-slate-500 italic">Nenhum contato extra registrado.</p>
                           )}
                         </div>
-
-                        {client.admin_notes && (
-                          <div className="md:col-span-2 border-t border-slate-700/60 pt-2 mt-1">
-                            <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Notas do Administrador:</span>
-                            <p className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded italic">{client.admin_notes}</p>
-                          </div>
-                        )}
                       </div>
 
-                      {/* Lista de Unidades */}
                       <div>
                         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                           <Home className="w-3.5 h-3.5 text-indigo-400" /> Unidades do Cliente
@@ -570,58 +587,57 @@ export default function ClientsPage() {
                           <p className="text-xs text-slate-500 italic">Nenhuma unidade vinculada.</p>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {client.properties?.map((prop) => (
-                              <div
-                                key={prop.id}
-                                className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
-                              >
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-white">{prop.name}</span>
-                                    {prop.property_type && (
-                                      <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
-                                        {prop.property_type}
-                                      </span>
-                                    )}
-                                    {(prop.is_complex || prop.complex_id) && (
-                                      <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
-                                        <Building2 className="w-2.5 h-2.5" /> Complexo
+                            {client.properties?.map((prop) => {
+                              const cPrice = prop.price_standard ?? prop.client_price ?? 0
+                              const clPrice = prop.cleaner_payout ?? prop.default_payout ?? prop.cleaner_price ?? 0
+
+                              return (
+                                <div
+                                  key={prop.id}
+                                  className="bg-slate-800 p-3 rounded-lg border border-slate-700/80 flex items-center justify-between text-xs"
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-white">{prop.name}</span>
+                                      {prop.property_type && (
+                                        <span className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">
+                                          {prop.property_type}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
+                                      <MapPin className="w-3 h-3 text-slate-500" /> {prop.address || 'Sem endereço'}
+                                    </span>
+                                    {(cPrice > 0 || clPrice > 0) && (
+                                      <span className="text-[10px] text-emerald-400 font-medium block mt-1">
+                                        Cobrança: {formatUSD(cPrice)} | Repasse: {formatUSD(clPrice)}
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-slate-400 flex items-center gap-1 text-[11px] mt-1">
-                                    <MapPin className="w-3 h-3 text-slate-500" /> {prop.address || 'Sem endereço registrado'}
-                                  </span>
-                                  {(prop.price_standard > 0 || prop.cleaner_payout > 0) && (
-                                    <span className="text-[10px] text-emerald-400 font-medium block mt-1">
-                                      Cobrança: {formatUSD(prop.price_standard)} | Repasse: {formatUSD(prop.cleaner_payout)}
-                                    </span>
-                                  )}
-                                </div>
 
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => handleOpenEditPropertyModal(prop)}
-                                    className="text-slate-400 hover:text-indigo-400 p-1.5 rounded transition cursor-pointer"
-                                    title="Editar Unidade"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteProperty(prop.id)}
-                                    className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
-                                    title="Remover Unidade"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => handleOpenEditPropertyModal(prop)}
+                                      className="text-slate-400 hover:text-indigo-400 p-1.5 rounded transition cursor-pointer"
+                                      title="Editar Unidade"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteProperty(prop.id)}
+                                      className="text-slate-500 hover:text-red-400 p-1.5 rounded transition cursor-pointer"
+                                      title="Remover Unidade"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         )}
                       </div>
 
-                      {/* Lista de Áreas Comuns */}
                       <div>
                         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                           <Layers className="w-3.5 h-3.5 text-teal-400" /> Áreas Comuns
@@ -668,7 +684,6 @@ export default function ClientsPage() {
                           </div>
                         )}
                       </div>
-
                     </div>
                   )}
                 </div>
@@ -694,7 +709,7 @@ export default function ClientsPage() {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex: John Doe / Stelar Properties"
+                    placeholder="Ex: John Doe"
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -707,7 +722,7 @@ export default function ClientsPage() {
                   >
                     <option value="residential">Residencial</option>
                     <option value="commercial">Comercial</option>
-                    <option value="vacation">Vacation Rentals (Airbnb)</option>
+                    <option value="vacation">Vacation Rentals</option>
                     <option value="complex">Complexo / Prédios</option>
                   </select>
                 </div>
@@ -886,7 +901,7 @@ export default function ClientsPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Notas Públicas (Limpadoras)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Notas Públicas</label>
                   <textarea
                     rows={2}
                     value={notes}
@@ -901,7 +916,7 @@ export default function ClientsPage() {
                     rows={2}
                     value={adminNotes}
                     onChange={(e) => setAdminNotes(e.target.value)}
-                    placeholder="Notas internas restritas ao admin..."
+                    placeholder="Notas internas..."
                     className="w-full bg-slate-900 border border-amber-500/30 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -928,7 +943,7 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Modal Criar/Editar Unidade ou Área Comum */}
+      {/* Modal Criar/Editar Unidade */}
       {showPropertyModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 shadow-2xl space-y-4">
@@ -936,7 +951,6 @@ export default function ClientsPage() {
               {editingPropertyId ? 'Editar Item' : 'Adicionar Novo Item / Área'}
             </h2>
 
-            {/* Selector de Categoria (Unidade vs Área Comum) */}
             <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-700">
               <button
                 type="button"
@@ -972,7 +986,7 @@ export default function ClientsPage() {
                   required
                   value={propertyName}
                   onChange={(e) => setPropertyName(e.target.value)}
-                  placeholder={entryCategory === 'common_area' ? 'Ex: Elevadores, Banheiros, Salão' : 'Ex: Apto 102 / Unidade B'}
+                  placeholder={entryCategory === 'common_area' ? 'Ex: Elevadores, Banheiros' : 'Ex: Apto 102'}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -999,20 +1013,6 @@ export default function ClientsPage() {
                       placeholder="Ex: 1x1, 2x2, Studio"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                     />
-                  </div>
-
-                  <div className="bg-slate-900/60 p-3 rounded-lg border border-purple-500/30">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isBelongsToComplex}
-                        onChange={(e) => setIsBelongsToComplex(e.target.checked)}
-                        className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-purple-500"
-                      />
-                      <span className="text-xs font-medium text-purple-300 flex items-center gap-1">
-                        <Building2 className="w-3.5 h-3.5" /> Esta unidade pertence a um Complexo / Prédio?
-                      </span>
-                    </label>
                   </div>
                 </>
               )}

@@ -34,6 +34,21 @@ interface Cleaner {
   email?: string
 }
 
+interface Property {
+  id: string
+  client_id: string
+  name?: string
+  address?: string
+  unit_number?: string
+  price_standard?: number | null
+  cleaner_payout?: number | null
+  default_payout?: number | null
+  price?: number | null
+  payout?: number | null
+  client_price?: number | null
+  cleaner_price?: number | null
+}
+
 interface Job {
   id: string
   client_id: string
@@ -50,7 +65,7 @@ interface Job {
   status: 'pending' | 'in_progress' | 'completed'
   notes?: string
   target_type?: 'unit' | 'common_area'
-  selected_common_areas?: any[]
+  selected_common_areas?: Array<{ id: string; name: string }>
   unit_details?: string
   clients?: Client
   cleaners?: Cleaner
@@ -124,6 +139,8 @@ export default function CalendarPage() {
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
   const [clientId, setClientId] = useState('')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [propertyId, setPropertyId] = useState('')
+  const [clientProperties, setClientProperties] = useState<Property[]>([])
   const [unitDetails, setUnitDetails] = useState('')
   const [cleanerId, setCleanerId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
@@ -171,42 +188,74 @@ export default function CalendarPage() {
     }
   }
 
-  // Busca na tabela 'property_common_areas' filtrando pelo client_id
+  // Busca de propriedades e áreas comuns
   useEffect(() => {
-    if (clientId && targetType === 'common_area') {
+    if (clientId) {
       supabase
-        .from('property_common_areas')
+        .from('properties')
         .select('*')
         .eq('client_id', clientId)
-        .order('name')
         .then(({ data, error }) => {
           if (!error && data) {
-            const formatted = data.map((item) => ({
-              id: item.id,
-              name: item.name,
-              client_price: Number(item.client_price || 0),
-              cleaner_price: Number(item.cleaner_price || 0)
-            }))
-            setAvailableAreas(formatted)
+            setClientProperties(data as Property[])
           } else {
-            setAvailableAreas([])
+            console.error('Erro na requisição das propriedades:', error)
+            setClientProperties([])
           }
         })
+
+      if (targetType === 'common_area') {
+        supabase
+          .from('property_common_areas')
+          .select('*')
+          .eq('client_id', clientId)
+          .order('name')
+          .then(({ data, error }) => {
+            if (!error && data) {
+              const formatted = data.map((item) => ({
+                id: item.id,
+                name: item.name,
+                client_price: Number(item.client_price || 0),
+                cleaner_price: Number(item.cleaner_price || 0)
+              }))
+              setAvailableAreas(formatted)
+            } else {
+              setAvailableAreas([])
+            }
+          })
+      }
     } else {
+      setClientProperties([])
       setAvailableAreas([])
     }
   }, [clientId, targetType])
 
-  // Somar automaticamente os valores das áreas selecionadas
+  // Função ajustada para extrair price_standard e cleaner_payout corretamente
+  const handlePropertyChange = (selectedPropertyId: string) => {
+    setPropertyId(selectedPropertyId)
+
+    if (!selectedPropertyId) {
+      setPrice('')
+      setPayout('')
+      return
+    }
+
+    const prop = clientProperties.find((p) => p.id === selectedPropertyId)
+    if (prop) {
+      // Prioriza price_standard e cleaner_payout vindos do banco
+      const clientVal = prop.price_standard ?? prop.client_price ?? prop.price
+      const cleanerVal = prop.cleaner_payout ?? prop.default_payout ?? prop.cleaner_price ?? prop.payout
+
+      setPrice(clientVal !== undefined && clientVal !== null ? String(clientVal) : '')
+      setPayout(cleanerVal !== undefined && cleanerVal !== null ? String(cleanerVal) : '')
+    }
+  }
+
   const handleToggleArea = (area: PropertyCommonArea) => {
     const isSelected = selectedAreaIds.includes(area.id)
-    let updatedIds: string[]
-
-    if (isSelected) {
-      updatedIds = selectedAreaIds.filter((id) => id !== area.id)
-    } else {
-      updatedIds = [...selectedAreaIds, area.id]
-    }
+    const updatedIds = isSelected
+      ? selectedAreaIds.filter((id) => id !== area.id)
+      : [...selectedAreaIds, area.id]
 
     setSelectedAreaIds(updatedIds)
 
@@ -218,10 +267,9 @@ export default function CalendarPage() {
     setPayout(totalCleanerPrice.toString())
   }
   
-  // Extrai o nome da unidade/imóvel ou áreas comuns selecionadas
-  const getJobUnitLabel = (job: any) => {
+  const getJobUnitLabel = (job: Job) => {
     if (job.target_type === 'common_area' && job.selected_common_areas && Array.isArray(job.selected_common_areas)) {
-      return job.selected_common_areas.map((a: any) => a.name).join(', ')
+      return job.selected_common_areas.map((a) => a.name).join(', ')
     }
     if (job.unit_details) {
       return job.unit_details
@@ -239,15 +287,22 @@ export default function CalendarPage() {
     return null
   }
 
-  // Troca de cliente no modal
   const handleClientChange = (selectedClientId: string) => {
     setClientId(selectedClientId)
     const client = clients.find((c) => c.id === selectedClientId) || null
     setSelectedClient(client)
 
-    setTargetType('unit')
+    const isComplex = client?.client_type?.toLowerCase() === 'complex'
+
+    if (!isComplex) {
+      setTargetType('unit')
+    }
+    
+    setPropertyId('')
     setUnitDetails('')
     setSelectedAreaIds([])
+    setPrice('')
+    setPayout('')
   }
 
   const handleServiceTypeChange = (type: string) => {
@@ -258,6 +313,7 @@ export default function CalendarPage() {
     setEditingJobId(null)
     setClientId('')
     setSelectedClient(null)
+    setPropertyId('')
     setUnitDetails('')
     setCleanerId('')
     setScheduledDate(initialDate || new Date().toISOString().split('T')[0])
@@ -279,6 +335,7 @@ export default function CalendarPage() {
   const handleOpenEditModal = (job: Job) => {
     setEditingJobId(job.id)
     setClientId(job.client_id || '')
+    setPropertyId(job.property_id || '')
 
     const client = clients.find((c) => c.id === job.client_id) || null
     setSelectedClient(client)
@@ -296,7 +353,6 @@ export default function CalendarPage() {
       const areaNames = matchArea[1].split(',').map((s) => s.trim())
       cleanNotes = cleanNotes.replace(/\[Área Comum:\s*[^\]]+\]\n?/, '').trim()
       
-      // Carrega as áreas para preencher os checkboxes selecionados
       supabase
         .from('property_common_areas')
         .select('*')
@@ -335,7 +391,6 @@ export default function CalendarPage() {
     setShowModal(true)
   }
 
-  // Função auxiliar para disparar o e-mail via API
   const sendEmailToCleaner = async (date: string) => {
     const selectedCleanerObj = cleaners.find((c) => c.id === cleanerId)
     const selectedClientObj = clients.find((c) => c.id === clientId)
@@ -372,8 +427,17 @@ export default function CalendarPage() {
     setSaving(true)
 
     let finalNotes = notes.trim()
-    if (targetType === 'unit' && unitDetails.trim()) {
-      const tag = `[Unidade/Especificação: ${unitDetails.trim()}]`
+    let displayUnitStr = unitDetails.trim()
+
+    if (propertyId && !displayUnitStr) {
+      const prop = clientProperties.find((p) => p.id === propertyId)
+      if (prop) {
+        displayUnitStr = prop.unit_number || prop.name || prop.address || ''
+      }
+    }
+
+    if (targetType === 'unit' && displayUnitStr) {
+      const tag = `[Unidade/Especificação: ${displayUnitStr}]`
       finalNotes = finalNotes ? `${tag}\n${finalNotes}` : tag
     } else if (targetType === 'common_area' && selectedAreaIds.length > 0) {
       const selectedNames = availableAreas
@@ -386,6 +450,7 @@ export default function CalendarPage() {
 
     const payload = {
       client_id: clientId,
+      property_id: propertyId || null,
       cleaner_id: cleanerId || null,
       scheduled_date: scheduledDate,
       scheduled_time: scheduledTime,
@@ -395,7 +460,7 @@ export default function CalendarPage() {
       payout: parseFloat(payout) || 0,
       extra_payout: parseFloat(extraPayout) || 0,
       notes: finalNotes,
-      status: 'pending'
+      status: 'pending' as const
     }
 
     try {
@@ -430,7 +495,6 @@ export default function CalendarPage() {
           const { error } = await supabase.from('jobs').insert(batchPayloads)
           if (error) throw error
 
-          // Dispara e-mail para cada data gerada na recorrência
           for (const date of datesToCreate) {
             await sendEmailToCleaner(date)
           }
@@ -443,8 +507,9 @@ export default function CalendarPage() {
 
       setShowModal(false)
       fetchData()
-    } catch (err: any) {
-      alert('Erro ao salvar agendamento: ' + err.message)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido'
+      alert('Erro ao salvar agendamento: ' + message)
     } finally {
       setSaving(false)
     }
@@ -458,7 +523,7 @@ export default function CalendarPage() {
     const payload = {
       ...copyData,
       scheduled_date: newDate,
-      status: 'pending'
+      status: 'pending' as const
     }
 
     const { error } = await supabase.from('jobs').insert([payload])
@@ -489,7 +554,6 @@ export default function CalendarPage() {
     }
   }
 
-  // Navegação Calendário
   const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
     const newDate = new Date(currentDate)
 
@@ -526,7 +590,6 @@ export default function CalendarPage() {
     return 'Todas as Limpezas'
   }
 
-  // Gerador de Dias do Calendário
   const generateCalendarDays = (): CalendarDay[] => {
     const todayStr = new Date().toISOString().split('T')[0]
     const days: CalendarDay[] = []
@@ -547,8 +610,7 @@ export default function CalendarPage() {
       start.setDate(currentDate.getDate() - currentDate.getDay())
 
       for (let i = 0; i < 7; i++) {
-        const d = new Date(start)
-        d.setDate(start.getDate() + i)
+        const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
         const dateStr = d.toISOString().split('T')[0]
         days.push({
           dateStr,
@@ -560,19 +622,14 @@ export default function CalendarPage() {
       return days
     }
 
-    // Mês
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
 
     const firstDayOfMonth = new Date(year, month, 1)
     const startingDayOfWeek = firstDayOfMonth.getDay()
 
-    const startDate = new Date(firstDayOfMonth)
-    startDate.setDate(startDate.getDate() - startingDayOfWeek)
-
-    for (let i = 0; i < 35; i++) {
-      const d = new Date(startDate)
-      d.setDate(startDate.getDate() + i)
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(year, month, 1 - startingDayOfWeek + i)
       const dateStr = d.toISOString().split('T')[0]
       days.push({
         dateStr,
@@ -587,7 +644,6 @@ export default function CalendarPage() {
 
   const calendarDays = generateCalendarDays()
 
-  // Agrupa agendamentos por data
   const jobsByDate = jobs.reduce<Record<string, Job[]>>((acc, job) => {
     if (!acc[job.scheduled_date]) acc[job.scheduled_date] = []
     acc[job.scheduled_date].push(job)
@@ -691,7 +747,6 @@ export default function CalendarPage() {
         {loading ? (
           <p className="text-slate-400 text-center py-10">Carregando agenda...</p>
         ) : viewMode === 'list' ? (
-          /* MODO LISTA */
           <div className="space-y-3">
             {jobs.length === 0 ? (
               <p className="text-center py-12 text-slate-400">Nenhum agendamento encontrado.</p>
@@ -758,7 +813,6 @@ export default function CalendarPage() {
             )}
           </div>
         ) : (
-          /* MODO GRADE/CALENDÁRIO */
           <div
             className={`grid gap-2 flex-1 ${
               viewMode === 'day'
@@ -936,15 +990,16 @@ export default function CalendarPage() {
                 </select>
               </div>
 
-              {/* Seletor de Tipo (Unidade x Área Comum) e seus respectivos inputs */}
-              {clientId && (
-                <div className="space-y-3">
-                  <div className="flex gap-2 mb-3 bg-slate-800 p-1 rounded-lg border border-slate-700">
+              {/* EXCLUSIVO PARA CLIENTES COMPLEX */}
+              {clientId && selectedClient?.client_type?.toLowerCase() === 'complex' && (
+                <div className="space-y-3 bg-slate-900/40 p-3 rounded-xl border border-slate-700/60">
+                  <label className="block text-xs font-semibold text-emerald-400">Tipo de Agendamento (Complex)</label>
+                  <div className="flex gap-2 bg-slate-900 p-1 rounded-lg border border-slate-700">
                     <button
                       type="button"
                       onClick={() => setTargetType('unit')}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
-                        targetType === 'unit' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+                        targetType === 'unit' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Unidade / Bloco
@@ -952,8 +1007,8 @@ export default function CalendarPage() {
                     <button
                       type="button"
                       onClick={() => setTargetType('common_area')}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
-                        targetType === 'common_area' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+                        targetType === 'common_area' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Área Comum
@@ -962,7 +1017,7 @@ export default function CalendarPage() {
 
                   {targetType === 'unit' ? (
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Especificação da Unidade (Bloco, Apt, Tamanho...)</label>
+                      <label className="block text-xs text-slate-400 mb-1">Especificação da Unidade (Bloco, Apt, etc.)</label>
                       <input
                         type="text"
                         value={unitDetails}
@@ -981,7 +1036,7 @@ export default function CalendarPage() {
                       ) : (
                         <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto p-2 bg-slate-900 rounded-lg border border-slate-700">
                           {availableAreas.map((area) => (
-                            <label key={area.id} className="flex items-center justify-between text-xs text-slate-200 cursor-pointer p-1 hover:bg-slate-800 rounded">
+                            <label key={area.id} className="flex items-center justify-between text-xs text-slate-200 cursor-pointer p-1.5 hover:bg-slate-800 rounded">
                               <div className="flex items-center gap-2">
                                 <input
                                   type="checkbox"
@@ -1000,6 +1055,42 @@ export default function CalendarPage() {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* PARA TODOS OS OUTROS CLIENTES (Standard, Residencial, etc.) */}
+              {clientId && selectedClient?.client_type?.toLowerCase() !== 'complex' && (
+                <div className="space-y-3">
+                  {clientProperties.length > 0 && (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Selecionar Imóvel Cadastrado</label>
+                      <select
+                        value={propertyId}
+                        onChange={(e) => handlePropertyChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                      >
+                        <option value="">Selecione da lista (opcional)...</option>
+                        {clientProperties.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.unit_number ? `Unidade ${p.unit_number}` : ''} {p.name ? `- ${p.name}` : ''} {p.address ? `(${p.address})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">
+                      {clientProperties.length > 0 ? 'Ou informe / detalhe por extenso:' : 'Especificação do Imóvel'}
+                    </label>
+                    <input
+                      type="text"
+                      value={unitDetails}
+                      onChange={(e) => setUnitDetails(e.target.value)}
+                      placeholder="Ex: Apt 104, Casa dos fundos..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -1103,7 +1194,6 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              {/* Seção de Recorrência */}
               {!editingJobId && (
                 <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-700 space-y-3">
                   <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-indigo-400">
