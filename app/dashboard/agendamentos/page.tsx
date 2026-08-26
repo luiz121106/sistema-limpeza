@@ -31,6 +31,7 @@ interface Client {
 interface Cleaner {
   id: string
   name: string
+  email?: string
 }
 
 interface Job {
@@ -334,6 +335,33 @@ export default function CalendarPage() {
     setShowModal(true)
   }
 
+  // Função auxiliar para disparar o e-mail via API
+  const sendEmailToCleaner = async (date: string) => {
+    const selectedCleanerObj = cleaners.find((c) => c.id === cleanerId)
+    const selectedClientObj = clients.find((c) => c.id === clientId)
+
+    if (selectedCleanerObj?.email) {
+      const totalPayout = (parseFloat(payout) || 0) + (parseFloat(extraPayout) || 0)
+      try {
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cleanerEmail: selectedCleanerObj.email,
+            cleanerName: selectedCleanerObj.name,
+            clientName: selectedClientObj?.name || 'Cliente',
+            date: date,
+            time: scheduledTime,
+            address: selectedClientObj?.address || 'Endereço não informado',
+            payout: totalPayout
+          })
+        })
+      } catch (err) {
+        console.error('Erro ao enviar e-mail para limpador:', err)
+      }
+    }
+  }
+
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!clientId || !scheduledDate || !scheduledTime) {
@@ -374,6 +402,7 @@ export default function CalendarPage() {
       if (editingJobId) {
         const { error } = await supabase.from('jobs').update(payload).eq('id', editingJobId)
         if (error) throw error
+        await sendEmailToCleaner(scheduledDate)
       } else {
         if (isRecurring && recurrenceUntil) {
           const datesToCreate: string[] = [scheduledDate]
@@ -400,9 +429,15 @@ export default function CalendarPage() {
 
           const { error } = await supabase.from('jobs').insert(batchPayloads)
           if (error) throw error
+
+          // Dispara e-mail para cada data gerada na recorrência
+          for (const date of datesToCreate) {
+            await sendEmailToCleaner(date)
+          }
         } else {
           const { error } = await supabase.from('jobs').insert([payload])
           if (error) throw error
+          await sendEmailToCleaner(scheduledDate)
         }
       }
 
