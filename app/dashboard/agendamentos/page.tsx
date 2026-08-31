@@ -132,6 +132,7 @@ export default function CalendarPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [cleaners, setCleaners] = useState<Cleaner[]>([])
+  const [allProperties, setAllProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
 
   // Modal State
@@ -168,19 +169,21 @@ export default function CalendarPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [jobsRes, clientsRes, cleanersRes] = await Promise.all([
+      const [jobsRes, clientsRes, cleanersRes, propertiesRes] = await Promise.all([
         supabase
           .from('jobs')
           .select('*, clients(*), cleaners(*)')
           .order('scheduled_date', { ascending: true })
           .order('scheduled_time', { ascending: true }),
         supabase.from('clients').select('*').order('name'),
-        supabase.from('cleaners').select('*').order('name')
+        supabase.from('cleaners').select('*').order('name'),
+        supabase.from('properties').select('*')
       ])
 
       if (jobsRes.data) setJobs(jobsRes.data as Job[])
       if (clientsRes.data) setClients(clientsRes.data)
       if (cleanersRes.data) setCleaners(cleanersRes.data)
+      if (propertiesRes.data) setAllProperties(propertiesRes.data as Property[])
     } catch (err) {
       console.error('Erro ao buscar dados:', err)
     } finally {
@@ -242,7 +245,6 @@ export default function CalendarPage() {
 
     const prop = clientProperties.find((p) => p.id === selectedPropertyId)
     if (prop) {
-      // Prioriza price_standard e cleaner_payout vindos do banco
       const clientVal = prop.price_standard ?? prop.client_price ?? prop.price
       const cleanerVal = prop.cleaner_payout ?? prop.default_payout ?? prop.cleaner_price ?? prop.payout
 
@@ -285,6 +287,17 @@ export default function CalendarPage() {
       }
     }
     return null
+  }
+
+  // Função para obter o endereço da Unidade (Fallback: Cliente)
+  const getJobAddress = (job: Job) => {
+    if (job.property_id) {
+      const property = allProperties.find((p) => p.id === job.property_id)
+      if (property?.address) {
+        return property.address
+      }
+    }
+    return job.clients?.address || 'Endereço não informado'
   }
 
   const handleClientChange = (selectedClientId: string) => {
@@ -394,9 +407,12 @@ export default function CalendarPage() {
   const sendEmailToCleaner = async (date: string) => {
     const selectedCleanerObj = cleaners.find((c) => c.id === cleanerId)
     const selectedClientObj = clients.find((c) => c.id === clientId)
+    const selectedPropertyObj = clientProperties.find((p) => p.id === propertyId)
 
     if (selectedCleanerObj?.email) {
       const totalPayout = (parseFloat(payout) || 0) + (parseFloat(extraPayout) || 0)
+      const targetAddress = selectedPropertyObj?.address || selectedClientObj?.address || 'Endereço não informado'
+
       try {
         await fetch('/api/send-email', {
           method: 'POST',
@@ -407,7 +423,7 @@ export default function CalendarPage() {
             clientName: selectedClientObj?.name || 'Cliente',
             date: date,
             time: scheduledTime,
-            address: selectedClientObj?.address || 'Endereço não informado',
+            address: targetAddress,
             payout: totalPayout
           })
         })
@@ -757,6 +773,7 @@ export default function CalendarPage() {
                 const totalPrice = basePrice + extraPriceNum
                 const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
                 const unitLabel = getJobUnitLabel(job)
+                const jobAddress = getJobAddress(job)
 
                 return (
                   <div
@@ -777,7 +794,7 @@ export default function CalendarPage() {
                       </div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                        {job.clients?.address || 'Endereço não informado'}
+                        {jobAddress}
                       </p>
                     </div>
 
@@ -863,6 +880,7 @@ export default function CalendarPage() {
                         const totalPrice = Number(job.price || 0) + Number(job.extra_price || 0)
                         const assignedCleaner = job.cleaners?.name || job.cleaner_name
                         const unitLabel = getJobUnitLabel(job)
+                        const jobAddress = getJobAddress(job)
 
                         return (
                           <div
@@ -903,19 +921,18 @@ export default function CalendarPage() {
                             )}
 
                             {(() => {
-                              const fullAddress = job.clients?.address
-                              if (!fullAddress) return null
+                              if (!jobAddress || jobAddress === 'Endereço não informado') return null
 
                               return (
                                 <a
-                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(jobAddress)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium hover:underline truncate w-fit pt-0.5"
                                   title="Abrir endereço no Google Maps"
                                 >
                                   <MapPin className="w-2.5 h-2.5 text-sky-400 flex-shrink-0" />
-                                  <span className="truncate max-w-[130px]">{fullAddress}</span>
+                                  <span className="truncate max-w-[130px]">{jobAddress}</span>
                                 </a>
                               )
                             })()}
