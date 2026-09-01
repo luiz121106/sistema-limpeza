@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Calendar,
   Loader2,
+  Home,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -21,6 +22,9 @@ interface FinJob {
   extra_price: number | string | null
   status: string
   payment_status: 'a_receber' | 'pago'
+  target_type?: 'unit' | 'common_area'
+  unit_details?: string
+  notes?: string
   clients: { name: string } | null
 }
 
@@ -41,6 +45,21 @@ function jobTotal(j: FinJob) {
   return Number(j.price || 0) + Number(j.extra_price || 0)
 }
 
+// Extrai a identificação da Unidade ou Área Comum
+function getJobUnitLabel(job: FinJob) {
+  if (job.unit_details) {
+    return job.unit_details
+  }
+  if (job.notes) {
+    const matchUnit = job.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+    if (matchUnit && matchUnit[1]) return matchUnit[1].trim()
+
+    const matchArea = job.notes.match(/\[Área Comum:\s*([^\]]+)\]/)
+    if (matchArea && matchArea[1]) return matchArea[1].trim()
+  }
+  return null
+}
+
 export default function FinanceiroPage() {
   const [jobs, setJobs] = useState<FinJob[]>([])
   const [chartJobs, setChartJobs] = useState<FinJob[]>([])
@@ -54,7 +73,7 @@ export default function FinanceiroPage() {
     setLoading(true)
     const { data } = await supabase
       .from('jobs')
-      .select('id, client_id, scheduled_date, price, extra_price, status, payment_status, clients(name)')
+      .select('id, client_id, scheduled_date, price, extra_price, status, payment_status, target_type, unit_details, notes, clients(name)')
       .gte('scheduled_date', startDate)
       .lte('scheduled_date', endDate)
       .not('status', 'in', '("cancelled","cancelado","deleted")')
@@ -291,29 +310,41 @@ export default function FinanceiroPage() {
               <p className="text-xs text-slate-500 p-5">Tudo pago no período selecionado. 🎉</p>
             ) : (
               <div className="divide-y divide-slate-800">
-                {pendentes.map((j) => (
-                  <div key={j.id} className="flex items-center justify-between px-5 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-white">{j.clients?.name ?? 'Sem cliente'}</p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(`${j.scheduled_date}T00:00:00`).toLocaleDateString('pt-BR')} · $
-                        {jobTotal(j).toFixed(2)}
-                      </p>
+                {pendentes.map((j) => {
+                  const unitLabel = getJobUnitLabel(j)
+
+                  return (
+                    <div key={j.id} className="flex items-center justify-between px-5 py-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium text-white">{j.clients?.name ?? 'Sem cliente'}</p>
+                          {unitLabel && (
+                            <span className="text-xs bg-purple-900/50 text-purple-200 border border-purple-600/50 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
+                              <Home className="w-3 h-3 text-purple-400" />
+                              {unitLabel}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {new Date(`${j.scheduled_date}T00:00:00`).toLocaleDateString('pt-BR')} · $
+                          {jobTotal(j).toFixed(2)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => markAsPaid(j.id)}
+                        disabled={updatingId === j.id}
+                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {updatingId === j.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Marcar como pago
+                      </button>
                     </div>
-                    <button
-                      onClick={() => markAsPaid(j.id)}
-                      disabled={updatingId === j.id}
-                      className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
-                    >
-                      {updatingId === j.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      )}
-                      Marcar como pago
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
