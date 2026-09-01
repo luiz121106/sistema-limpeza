@@ -3,12 +3,36 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
+interface JobDetail {
+  id: string
+  date: string
+  clientName: string
+  unitLabel: string | null
+  payout: number
+}
+
 interface CleanerRepasse {
   cleanerId: string
   cleanerName: string
   cleanerEmail: string
   totalServicos: number
   totalPayout: number
+  servicos: JobDetail[]
+}
+
+// Extrai o nome da unidade ou área comum
+function getJobUnitLabel(item: any) {
+  if (item.unit_details) {
+    return item.unit_details
+  }
+  if (item.notes) {
+    const matchUnit = item.notes.match(/\[Unidade\/Especificação:\s*([^\]]+)\]/)
+    if (matchUnit && matchUnit[1]) return matchUnit[1].trim()
+
+    const matchArea = item.notes.match(/\[Área Comum:\s*([^\]]+)\]/)
+    if (matchArea && matchArea[1]) return matchArea[1].trim()
+  }
+  return null
 }
 
 export default function FinanceiroLimpadoresPage() {
@@ -20,10 +44,15 @@ export default function FinanceiroLimpadoresPage() {
   const [relatorio, setRelatorio] = useState<CleanerRepasse[]>([])
   const [loading, setLoading] = useState(true)
   const [totalGeral, setTotalGeral] = useState<number>(0)
+  const [expandedCleanerId, setExpandedCleanerId] = useState<string | null>(null)
 
   useEffect(() => {
     carregarFinanceiroQuinzenal()
   }, [year, month, fortnight])
+
+  const toggleExpand = (cleanerId: string) => {
+    setExpandedCleanerId((prev) => (prev === cleanerId ? null : cleanerId))
+  }
 
   async function carregarFinanceiroQuinzenal() {
     setLoading(true)
@@ -41,7 +70,7 @@ export default function FinanceiroLimpadoresPage() {
       endDate = `${year}-${monthFormatted}-${lastDay}`
     }
 
-    // Consulta buscando repasse base, extra do serviço e o repasse padrão do cliente
+    // Busca incluindo detalhes do serviço, cliente e unidade
     const { data: agendamentos, error } = await supabase
       .from('jobs')
       .select(`
@@ -50,11 +79,15 @@ export default function FinanceiroLimpadoresPage() {
         extra_payout,
         scheduled_date,
         cleaner_id,
+        unit_details,
+        notes,
+        target_type,
         cleaners ( id, name, email ),
-        clients ( cleaner_payout )
+        clients ( name, cleaner_payout )
       `)
       .gte('scheduled_date', startDate)
       .lte('scheduled_date', endDate)
+      .order('scheduled_date', { ascending: true })
 
     if (error) {
       console.error('Erro ao carregar repasses quinzenais:', error)
@@ -67,12 +100,8 @@ export default function FinanceiroLimpadoresPage() {
       const cleanerName = item.cleaners?.name || 'Limpadora não identificada'
       const cleanerEmail = item.cleaners?.email || '-'
 
-      // Repasse base do serviço (se não houver no job, busca o padrão do cliente)
       const basePayout = Number(item.payout) || Number(item.clients?.cleaner_payout) || 0
-      // Valor extra (gorjeta, ajuda de custo, etc)
       const extraPayout = Number(item.extra_payout) || 0
-
-      // Valor total do repasse para esta limpeza
       const totalJobPayout = basePayout + extraPayout
 
       if (!acc[cleanerId]) {
@@ -82,11 +111,19 @@ export default function FinanceiroLimpadoresPage() {
           cleanerEmail,
           totalServicos: 0,
           totalPayout: 0,
+          servicos: [],
         }
       }
 
       acc[cleanerId].totalServicos += 1
       acc[cleanerId].totalPayout += totalJobPayout
+      acc[cleanerId].servicos.push({
+        id: item.id,
+        date: item.scheduled_date,
+        clientName: item.clients?.name || 'Cliente sem nome',
+        unitLabel: getJobUnitLabel(item),
+        payout: totalJobPayout,
+      })
 
       return acc
     }, {})
@@ -193,27 +230,70 @@ export default function FinanceiroLimpadoresPage() {
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {relatorio.map((item) => (
-              <div
-                key={item.cleanerId}
-                className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition"
-              >
-                <div className="space-y-1">
-                  <h4 className="font-bold text-gray-800 text-lg">{item.cleanerName}</h4>
-                  <p className="text-xs text-gray-500">{item.cleanerEmail}</p>
-                  <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-medium">
-                    {item.totalServicos} {item.totalServicos === 1 ? 'serviço realizado' : 'serviços realizados'}
-                  </span>
-                </div>
+            {relatorio.map((item) => {
+              const isExpanded = expandedCleanerId === item.cleanerId
 
-                <div className="bg-emerald-50 sm:bg-transparent p-4 sm:p-0 rounded-xl text-left sm:text-right border sm:border-none border-emerald-100">
-                  <span className="text-xs text-gray-500 block font-medium">Total a pagar nesta quinzena</span>
-                  <span className="text-3xl font-extrabold text-emerald-600">
-                    ${item.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+              return (
+                <div key={item.cleanerId} className="flex flex-col">
+                  {/* Item do Cabeçalho (Clicável para expandir) */}
+                  <div
+                    onClick={() => toggleExpand(item.cleanerId)}
+                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 transition"
+                  >
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-gray-800 text-lg">{item.cleanerName}</h4>
+                      <p className="text-xs text-gray-500">{item.cleanerEmail}</p>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-medium">
+                          {item.totalServicos} {item.totalServicos === 1 ? 'serviço realizado' : 'serviços realizados'}
+                        </span>
+                        <span className="text-xs text-emerald-600 font-medium hover:underline">
+                          {isExpanded ? '▲ Ocultar detalhes' : '▼ Ver quais foram'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-emerald-50 sm:bg-transparent p-4 sm:p-0 rounded-xl text-left sm:text-right border sm:border-none border-emerald-100">
+                      <span className="text-xs text-gray-500 block font-medium">Total a pagar nesta quinzena</span>
+                      <span className="text-3xl font-extrabold text-emerald-600">
+                        ${item.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Detalhes expansíveis com a lista das limpezas */}
+                  {isExpanded && (
+                    <div className="bg-slate-50 p-4 border-t border-gray-100 divide-y divide-gray-200/80">
+                      <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                        Detalhamento das Limpezas:
+                      </p>
+                      {item.servicos.map((svc) => (
+                        <div key={svc.id} className="py-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-gray-900">{svc.clientName}</span>
+                              {svc.unitLabel && (
+                                <span className="bg-purple-700 text-white border border-purple-800 px-2.5 py-0.5 rounded-md font-bold text-[11px] shadow-sm">
+                                  {svc.unitLabel}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-gray-500 text-[11px]">
+                              {new Date(`${svc.date}T00:00:00`).toLocaleDateString('pt-BR')}
+                            </span>
+                          </div>
+
+                          <span className="font-bold text-gray-700 bg-white border border-gray-200 px-2.5 py-1 rounded shadow-sm">
+                            Repasse: ${svc.payout.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
