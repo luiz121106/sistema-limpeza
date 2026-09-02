@@ -106,9 +106,9 @@ const SERVICE_TYPE_STYLES: Record<string, { bg: string; border: string; badge: s
     badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
     label: 'Move-In/Out'
   },
-  Vacation: {
+  'Vacation': {
     bg: 'bg-purple-950/20 hover:bg-purple-950/40',
-    border: 'border-purple-500/40',
+    border: 'border-purple-500/20',
     badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
     label: 'Vacation / Airbnb'
   },
@@ -413,6 +413,21 @@ export default function CalendarPage() {
       const totalPayout = (parseFloat(payout) || 0) + (parseFloat(extraPayout) || 0)
       const targetAddress = selectedPropertyObj?.address || selectedClientObj?.address || 'Endereço não informado'
 
+      // Extrai dinamicamente a unidade para enviar no e-mail
+      let resolvedUnit = unitDetails.trim()
+      if (propertyId && !resolvedUnit) {
+        const prop = clientProperties.find((p) => p.id === propertyId)
+        if (prop) {
+          resolvedUnit = prop.unit_number || prop.name || ''
+        }
+      }
+      if (targetType === 'common_area' && selectedAreaIds.length > 0) {
+        resolvedUnit = availableAreas
+          .filter((a) => selectedAreaIds.includes(a.id))
+          .map((a) => a.name)
+          .join(', ')
+      }
+
       try {
         await fetch('/api/send-email', {
           method: 'POST',
@@ -421,6 +436,7 @@ export default function CalendarPage() {
             cleanerEmail: selectedCleanerObj.email,
             cleanerName: selectedCleanerObj.name,
             clientName: selectedClientObj?.name || 'Cliente',
+            unit: resolvedUnit || null,
             date: date,
             time: scheduledTime,
             address: targetAddress,
@@ -937,35 +953,35 @@ export default function CalendarPage() {
                               )
                             })()}
 
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-700/50 mt-1">
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-700/50 mt-1 gap-1 min-w-0">
                               <select
                                 value={job.status}
                                 onChange={(e) => handleUpdateStatus(job.id, e.target.value)}
-                                className="bg-slate-900 border border-slate-700 text-[9px] rounded px-1 py-0.5 text-slate-200 font-medium focus:outline-none"
+                                className="bg-slate-900 border border-slate-700 text-[9px] rounded px-0.5 py-0.5 text-slate-200 font-medium focus:outline-none max-w-[65px] truncate"
                               >
                                 <option value="pending">Pendente</option>
-                                <option value="in_progress">Em Andamento</option>
+                                <option value="in_progress">Andamento</option>
                                 <option value="completed">Concluída</option>
                               </select>
 
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-0.5 flex-shrink-0">
                                 <button
                                   onClick={() => handleDuplicateJob(job)}
-                                  className="p-1 text-slate-400 hover:text-sky-400 rounded transition cursor-pointer"
+                                  className="p-0.5 text-slate-400 hover:text-sky-400 rounded transition cursor-pointer"
                                   title="Duplicar"
                                 >
                                   <Copy className="w-3 h-3" />
                                 </button>
                                 <button
                                   onClick={() => handleOpenEditModal(job)}
-                                  className="p-1 text-slate-400 hover:text-emerald-400 rounded transition cursor-pointer"
+                                  className="p-0.5 text-slate-400 hover:text-emerald-400 rounded transition cursor-pointer"
                                   title="Editar"
                                 >
                                   <Edit className="w-3 h-3" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteJob(job.id)}
-                                  className="p-1 text-slate-500 hover:text-red-400 rounded transition cursor-pointer"
+                                  className="p-0.5 text-slate-500 hover:text-red-400 rounded transition cursor-pointer"
                                   title="Excluir"
                                 >
                                   <Trash2 className="w-3 h-3" />
