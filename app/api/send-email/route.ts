@@ -19,11 +19,24 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(request: Request) {
   try {
-    const { cleanerEmail, cleanerName, clientName, date, time, address, payout } = await request.json()
+    const { 
+      cleanerEmail, 
+      cleanerName, 
+      clientName, 
+      unit, 
+      unitDetails, 
+      date, 
+      time, 
+      address, 
+      payout 
+    } = await request.json()
 
     if (!cleanerEmail) {
       return NextResponse.json({ error: 'E-mail do limpador não informado' }, { status: 400 })
     }
+
+    // Aceita tanto a chave 'unit' quanto 'unitDetails'
+    const unitLabel = unit || unitDetails || null
 
     const formattedDate = date ? date.split('-').reverse().join('/') : date
 
@@ -42,7 +55,15 @@ export async function POST(request: Request) {
           <p>Você tem um novo agendamento de limpeza confirmado.</p>
           
           <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>👤 Cliente:</strong> ${clientName}</p>
+            <p style="margin: 5px 0;">
+              <strong>👤 Cliente:</strong> ${clientName}
+              ${
+                unitLabel 
+                  ? `<span style="background-color: #6b21a8; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 6px;">${unitLabel}</span>` 
+                  : ''
+              }
+            </p>
+            ${unitLabel ? `<p style="margin: 5px 0;"><strong>🏢 Unidade / Área:</strong> ${unitLabel}</p>` : ''}
             <p style="margin: 5px 0;"><strong>📅 Data:</strong> ${formattedDate}</p>
             <p style="margin: 5px 0;"><strong>⏰ Horário:</strong> ${time}</p>
             <p style="margin: 5px 0;"><strong>📍 Endereço:</strong> ${address}</p>
