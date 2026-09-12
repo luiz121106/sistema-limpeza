@@ -106,7 +106,7 @@ const SERVICE_TYPE_STYLES: Record<string, { bg: string; border: string; badge: s
     badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
     label: 'Move-In/Out'
   },
-  'Vacation': {
+  Vacation: {
     bg: 'bg-purple-950/20 hover:bg-purple-950/40',
     border: 'border-purple-500/20',
     badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
@@ -156,7 +156,7 @@ export default function CalendarPage() {
   const [targetType, setTargetType] = useState<'unit' | 'common_area'>('unit')
   const [availableAreas, setAvailableAreas] = useState<PropertyCommonArea[]>([])
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([])
-  
+
   // Recorrência
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrenceFrequency, setRecurrenceFrequency] = useState('weekly')
@@ -233,7 +233,6 @@ export default function CalendarPage() {
     }
   }, [clientId, targetType])
 
-  // Função ajustada para extrair price_standard e cleaner_payout corretamente
   const handlePropertyChange = (selectedPropertyId: string) => {
     setPropertyId(selectedPropertyId)
 
@@ -268,7 +267,7 @@ export default function CalendarPage() {
     setPrice(totalClientPrice.toString())
     setPayout(totalCleanerPrice.toString())
   }
-  
+
   const getJobUnitLabel = (job: Job) => {
     if (job.target_type === 'common_area' && job.selected_common_areas && Array.isArray(job.selected_common_areas)) {
       return job.selected_common_areas.map((a) => a.name).join(', ')
@@ -289,7 +288,6 @@ export default function CalendarPage() {
     return null
   }
 
-  // Função para obter o endereço da Unidade (Fallback: Cliente)
   const getJobAddress = (job: Job) => {
     if (job.property_id) {
       const property = allProperties.find((p) => p.id === job.property_id)
@@ -310,7 +308,7 @@ export default function CalendarPage() {
     if (!isComplex) {
       setTargetType('unit')
     }
-    
+
     setPropertyId('')
     setUnitDetails('')
     setSelectedAreaIds([])
@@ -365,7 +363,7 @@ export default function CalendarPage() {
       setTargetType('common_area')
       const areaNames = matchArea[1].split(',').map((s) => s.trim())
       cleanNotes = cleanNotes.replace(/\[Área Comum:\s*[^\]]+\]\n?/, '').trim()
-      
+
       supabase
         .from('property_common_areas')
         .select('*')
@@ -413,7 +411,6 @@ export default function CalendarPage() {
       const totalPayout = (parseFloat(payout) || 0) + (parseFloat(extraPayout) || 0)
       const targetAddress = selectedPropertyObj?.address || selectedClientObj?.address || 'Endereço não informado'
 
-      // Extrai dinamicamente a unidade para enviar no e-mail
       let resolvedUnit = unitDetails.trim()
       if (propertyId && !resolvedUnit) {
         const prop = clientProperties.find((p) => p.id === propertyId)
@@ -503,10 +500,10 @@ export default function CalendarPage() {
       } else {
         if (isRecurring && recurrenceUntil) {
           const datesToCreate: string[] = [scheduledDate]
-          let current = new Date(`${scheduledDate}T00:00:00`)
+          const current = new Date(`${scheduledDate}T00:00:00`)
           const end = new Date(`${recurrenceUntil}T00:00:00`)
 
-          while (true) {
+          while (current <= end) {
             if (recurrenceFrequency === 'weekly') {
               current.setDate(current.getDate() + 7)
             } else if (recurrenceFrequency === 'biweekly') {
@@ -830,12 +827,14 @@ export default function CalendarPage() {
                       <button
                         onClick={() => handleOpenEditModal(job)}
                         className="p-1.5 text-slate-400 hover:text-emerald-400 rounded transition cursor-pointer"
+                        aria-label="Editar agendamento"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteJob(job.id)}
                         className="p-1.5 text-slate-500 hover:text-red-400 rounded transition cursor-pointer"
+                        aria-label="Excluir agendamento"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -861,7 +860,7 @@ export default function CalendarPage() {
               return (
                 <div
                   key={day.dateStr}
-                  className={`min-h-[160px] bg-slate-800/60 rounded-xl border flex flex-col p-2 transition ${
+                  className={`min-h-40 bg-slate-800/60 rounded-xl border flex flex-col p-2 transition ${
                     day.isToday
                       ? 'border-emerald-500 bg-emerald-950/10'
                       : day.isCurrentMonth
@@ -887,7 +886,7 @@ export default function CalendarPage() {
                     </button>
                   </div>
 
-                  <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[420px]">
+                  <div className="space-y-1.5 flex-1 overflow-y-auto max-h-105">
                     {dayJobs.length === 0 ? (
                       <p className="text-[10px] text-slate-500 italic text-center py-4">Sem limpezas</p>
                     ) : (
@@ -906,7 +905,7 @@ export default function CalendarPage() {
                             }`}
                           >
                             <div className="flex items-start justify-between gap-1">
-                              <span className="font-bold text-xs text-white truncate max-w-[120px]">
+                              <span className="font-bold text-xs text-white truncate max-w-30">
                                 {job.clients?.name}
                               </span>
                               <span className="text-[10px] font-bold text-emerald-400">
@@ -919,20 +918,20 @@ export default function CalendarPage() {
                                 <Clock className="w-3 h-3 text-amber-400" /> {job.scheduled_time}
                               </span>
 
-                              <span className={`px-1 py-0.2 rounded text-[9px] font-semibold ${style.badge}`}>
+                              <span className={`px-1 py-0.5 rounded text-[9px] font-semibold ${style.badge}`}>
                                 {style.label}
                               </span>
                             </div>
 
                             {unitLabel && (
                               <p className="text-[10px] text-purple-300 truncate flex items-center gap-1 font-medium bg-purple-950/40 px-1 py-0.5 rounded border border-purple-800/40">
-                                <Home className="w-2.5 h-2.5 text-purple-400 flex-shrink-0" /> {unitLabel}
+                                <Home className="w-2.5 h-2.5 text-purple-400 shrink-0" /> {unitLabel}
                               </p>
                             )}
 
                             {assignedCleaner && (
                               <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
-                                <UserCheck className="w-2.5 h-2.5 flex-shrink-0" /> {assignedCleaner}
+                                <UserCheck className="w-2.5 h-2.5 shrink-0" /> {assignedCleaner}
                               </p>
                             )}
 
@@ -947,8 +946,8 @@ export default function CalendarPage() {
                                   className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium hover:underline truncate w-fit pt-0.5"
                                   title="Abrir endereço no Google Maps"
                                 >
-                                  <MapPin className="w-2.5 h-2.5 text-sky-400 flex-shrink-0" />
-                                  <span className="truncate max-w-[130px]">{jobAddress}</span>
+                                  <MapPin className="w-2.5 h-2.5 text-sky-400 shrink-0" />
+                                  <span className="truncate max-w-32.5">{jobAddress}</span>
                                 </a>
                               )
                             })()}
@@ -957,14 +956,14 @@ export default function CalendarPage() {
                               <select
                                 value={job.status}
                                 onChange={(e) => handleUpdateStatus(job.id, e.target.value)}
-                                className="bg-slate-900 border border-slate-700 text-[9px] rounded px-0.5 py-0.5 text-slate-200 font-medium focus:outline-none max-w-[65px] truncate"
+                                className="bg-slate-900 border border-slate-700 text-[9px] rounded px-0.5 py-0.5 text-slate-200 font-medium focus:outline-none max-w-16 truncate"
                               >
                                 <option value="pending">Pendente</option>
                                 <option value="in_progress">Andamento</option>
                                 <option value="completed">Concluída</option>
                               </select>
 
-                              <div className="flex items-center gap-0.5 flex-shrink-0">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 <button
                                   onClick={() => handleDuplicateJob(job)}
                                   className="p-0.5 text-slate-400 hover:text-sky-400 rounded transition cursor-pointer"
@@ -1212,7 +1211,7 @@ export default function CalendarPage() {
                     required
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white font-bold text-emerald-400"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 font-bold text-emerald-400"
                   />
                 </div>
                 <div>

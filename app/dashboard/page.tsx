@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet } from 'lucide-react'
+import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet, Globe } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DashboardPage() {
@@ -145,85 +145,98 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Menu de Atalhos (2 fileiras de 3 no notebook/desktop) */}
+        {/* Menu de Atalhos Padronizado */}
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
           <h2 className="text-lg font-semibold">Atalhos do Sistema</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <Link
               href="/dashboard/clientes"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg group-hover:scale-105 transition shrink-0">
                 <UserPlus className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-emerald-400 transition">Gerenciar Clientes</h3>
-                <p className="text-xs text-slate-400">Cadastrar novos clientes, endereços e valores.</p>
+                <p className="text-xs text-slate-400 mt-1">Cadastrar novos clientes, endereços e valores.</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/limpadores"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-teal-500/10 text-teal-400 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-teal-500/10 text-teal-400 rounded-lg group-hover:scale-105 transition shrink-0">
                 <UserCheck className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-teal-400 transition">Equipe / Limpadores</h3>
-                <p className="text-xs text-slate-400">Cadastrar e manter a equipe de limpeza.</p>
+                <p className="text-xs text-slate-400 mt-1">Cadastrar e manter a equipe de limpeza.</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/agendamentos"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-lg group-hover:scale-105 transition shrink-0">
                 <Calendar className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-blue-400 transition">Agendamentos</h3>
-                <p className="text-xs text-slate-400">Organizar a escala e atrelar limpadores.</p>
+                <p className="text-xs text-slate-400 mt-1">Organizar a escala e atrelar limpadores.</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/dashboard/vacation-links"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
+            >
+              <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg group-hover:scale-105 transition shrink-0">
+                <Globe className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-200 group-hover:text-purple-400 transition">Links Vacation</h3>
+                <p className="text-xs text-slate-400 mt-1">Gerencie e copie anúncios de Airbnb, Vrbo e plataformas.</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/financeiro"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg group-hover:scale-105 transition shrink-0">
                 <DollarSign className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-purple-400 transition">Financeiro Geral</h3>
-                <p className="text-xs text-slate-400">Faturamento, recebíveis e pagamentos.</p>
+                <p className="text-xs text-slate-400 mt-1">Faturamento, recebíveis e pagamentos.</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/financeiro-limpadores"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-emerald-500/10 text-emerald-300 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-300 rounded-lg group-hover:scale-105 transition shrink-0">
                 <Wallet className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-emerald-300 transition">Repasse Limpadores</h3>
-                <p className="text-xs text-slate-400">Fechamento quinzenal de repasses da equipe.</p>
+                <p className="text-xs text-slate-400 mt-1">Fechamento quinzenal de repasses da equipe.</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/historico"
-              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-center gap-3 transition group"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
             >
-              <div className="p-2.5 bg-slate-500/10 text-slate-300 rounded-lg group-hover:scale-105 transition">
+              <div className="p-2.5 bg-slate-500/10 text-slate-300 rounded-lg group-hover:scale-105 transition shrink-0">
                 <Clock className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-slate-100 transition">Histórico</h3>
-                <p className="text-xs text-slate-400">Todas as limpezas, com filtro por mês e cliente.</p>
+                <p className="text-xs text-slate-400 mt-1">Todas as limpezas, com filtro por mês e cliente.</p>
               </div>
             </Link>
           </div>
