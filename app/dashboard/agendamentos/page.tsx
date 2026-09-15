@@ -20,6 +20,14 @@ import {
   Repeat
 } from 'lucide-react'
 
+// Helper para formatar objetos Date em YYYY-MM-DD considerando o fuso local
+const formatLocalDate = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 // Tipagens
 interface Client {
   id: string
@@ -327,7 +335,7 @@ export default function CalendarPage() {
     setPropertyId('')
     setUnitDetails('')
     setCleanerId('')
-    setScheduledDate(initialDate || new Date().toISOString().split('T')[0])
+    setScheduledDate(initialDate || formatLocalDate(new Date()))
     setScheduledTime('09:00')
     setServiceType('Standard')
     setPrice('')
@@ -402,50 +410,6 @@ export default function CalendarPage() {
     setShowModal(true)
   }
 
-  const sendEmailToCleaner = async (date: string) => {
-    const selectedCleanerObj = cleaners.find((c) => c.id === cleanerId)
-    const selectedClientObj = clients.find((c) => c.id === clientId)
-    const selectedPropertyObj = clientProperties.find((p) => p.id === propertyId)
-
-    if (selectedCleanerObj?.email) {
-      const totalPayout = (parseFloat(payout) || 0) + (parseFloat(extraPayout) || 0)
-      const targetAddress = selectedPropertyObj?.address || selectedClientObj?.address || 'Endereço não informado'
-
-      let resolvedUnit = unitDetails.trim()
-      if (propertyId && !resolvedUnit) {
-        const prop = clientProperties.find((p) => p.id === propertyId)
-        if (prop) {
-          resolvedUnit = prop.unit_number || prop.name || ''
-        }
-      }
-      if (targetType === 'common_area' && selectedAreaIds.length > 0) {
-        resolvedUnit = availableAreas
-          .filter((a) => selectedAreaIds.includes(a.id))
-          .map((a) => a.name)
-          .join(', ')
-      }
-
-      try {
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cleanerEmail: selectedCleanerObj.email,
-            cleanerName: selectedCleanerObj.name,
-            clientName: selectedClientObj?.name || 'Cliente',
-            unit: resolvedUnit || null,
-            date: date,
-            time: scheduledTime,
-            address: targetAddress,
-            payout: totalPayout
-          })
-        })
-      } catch (err) {
-        console.error('Erro ao enviar e-mail para limpador:', err)
-      }
-    }
-  }
-
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!clientId || !scheduledDate || !scheduledTime) {
@@ -496,24 +460,30 @@ export default function CalendarPage() {
       if (editingJobId) {
         const { error } = await supabase.from('jobs').update(payload).eq('id', editingJobId)
         if (error) throw error
-        await sendEmailToCleaner(scheduledDate)
       } else {
         if (isRecurring && recurrenceUntil) {
           const datesToCreate: string[] = [scheduledDate]
-          const current = new Date(`${scheduledDate}T00:00:00`)
-          const end = new Date(`${recurrenceUntil}T00:00:00`)
+          
+          const [startYear, startMonth, startDay] = scheduledDate.split('-').map(Number)
+          const [endYear, endMonth, endDay] = recurrenceUntil.split('-').map(Number)
 
-          while (current <= end) {
+          const current = new Date(startYear, startMonth - 1, startDay)
+          const end = new Date(endYear, endMonth - 1, endDay)
+
+          while (true) {
             if (recurrenceFrequency === 'weekly') {
               current.setDate(current.getDate() + 7)
             } else if (recurrenceFrequency === 'biweekly') {
               current.setDate(current.getDate() + 14)
             } else if (recurrenceFrequency === 'monthly') {
+              const targetDay = startDay
               current.setMonth(current.getMonth() + 1)
+              const maxDaysInMonth = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()
+              current.setDate(Math.min(targetDay, maxDaysInMonth))
             }
 
             if (current > end) break
-            datesToCreate.push(current.toISOString().split('T')[0])
+            datesToCreate.push(formatLocalDate(current))
           }
 
           const batchPayloads = datesToCreate.map((d) => ({
@@ -523,14 +493,9 @@ export default function CalendarPage() {
 
           const { error } = await supabase.from('jobs').insert(batchPayloads)
           if (error) throw error
-
-          for (const date of datesToCreate) {
-            await sendEmailToCleaner(date)
-          }
         } else {
           const { error } = await supabase.from('jobs').insert([payload])
           if (error) throw error
-          await sendEmailToCleaner(scheduledDate)
         }
       }
 
@@ -620,11 +585,11 @@ export default function CalendarPage() {
   }
 
   const generateCalendarDays = (): CalendarDay[] => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = formatLocalDate(new Date())
     const days: CalendarDay[] = []
 
     if (viewMode === 'day') {
-      const dateStr = currentDate.toISOString().split('T')[0]
+      const dateStr = formatLocalDate(currentDate)
       days.push({
         dateStr,
         label: currentDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'numeric' }),
@@ -640,7 +605,7 @@ export default function CalendarPage() {
 
       for (let i = 0; i < 7; i++) {
         const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
-        const dateStr = d.toISOString().split('T')[0]
+        const dateStr = formatLocalDate(d)
         days.push({
           dateStr,
           label: d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }),
@@ -659,7 +624,7 @@ export default function CalendarPage() {
 
     for (let i = 0; i < 42; i++) {
       const d = new Date(year, month, 1 - startingDayOfWeek + i)
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = formatLocalDate(d)
       days.push({
         dateStr,
         label: `${d.getDate()} ${d.toLocaleDateString('pt-BR', { weekday: 'short' })}`,
