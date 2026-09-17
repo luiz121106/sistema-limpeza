@@ -46,6 +46,9 @@ export default function FinanceiroLimpadoresPage() {
   const [totalGeral, setTotalGeral] = useState<number>(0)
   const [expandedCleanerId, setExpandedCleanerId] = useState<string | null>(null)
 
+  // Estado para controlar o modal do PDF
+  const [pdfCleaner, setPdfCleaner] = useState<CleanerRepasse | null>(null)
+
   useEffect(() => {
     carregarFinanceiroQuinzenal()
   }, [year, month, fortnight])
@@ -70,7 +73,6 @@ export default function FinanceiroLimpadoresPage() {
       endDate = `${year}-${monthFormatted}-${lastDay}`
     }
 
-    // Busca incluindo detalhes do serviço, cliente e unidade
     const { data: agendamentos, error } = await supabase
       .from('jobs')
       .select(`
@@ -96,9 +98,14 @@ export default function FinanceiroLimpadoresPage() {
     }
 
     const agrupado = (agendamentos || []).reduce((acc: Record<string, CleanerRepasse>, item: any) => {
-      const cleanerId = item.cleaner_id || 'sem-id'
-      const cleanerName = item.cleaners?.name || 'Limpadora não identificada'
-      const cleanerEmail = item.cleaners?.email || '-'
+      // Ignora registros sem cleaner_id ou sem o objeto de limpadora preenchido
+      if (!item.cleaner_id || !item.cleaners?.name) {
+        return acc
+      }
+
+      const cleanerId = item.cleaner_id
+      const cleanerName = item.cleaners.name
+      const cleanerEmail = item.cleaners.email || '-'
 
       const basePayout = Number(item.payout) || Number(item.clients?.cleaner_payout) || 0
       const extraPayout = Number(item.extra_payout) || 0
@@ -151,6 +158,8 @@ export default function FinanceiroLimpadoresPage() {
     { value: 12, label: 'Dezembro' },
   ]
 
+  const nomeMesAtual = meses.find((m) => m.value === month)?.label
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -159,11 +168,11 @@ export default function FinanceiroLimpadoresPage() {
           <p className="text-gray-500 text-sm">Cálculo quinzenal de repasses e serviços</p>
         </div>
 
-        <div className="flex flex-wrap gap-2 bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
+        <div className="flex flex-wrap gap-2 bg-white p-2 rounded-lg border border-gray-200 shadow-xs">
           <select
             value={fortnight}
             onChange={(e) => setFortnight(Number(e.target.value))}
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
           >
             <option value={1}>1ª Quinzena (01 a 15)</option>
             <option value={2}>2ª Quinzena (16 ao fim do mês)</option>
@@ -172,7 +181,7 @@ export default function FinanceiroLimpadoresPage() {
           <select
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
           >
             {meses.map((m) => (
               <option key={m.value} value={m.value}>
@@ -184,7 +193,7 @@ export default function FinanceiroLimpadoresPage() {
           <select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
           >
             {[2024, 2025, 2026, 2027].map((y) => (
               <option key={y} value={y}>
@@ -195,7 +204,7 @@ export default function FinanceiroLimpadoresPage() {
         </div>
       </div>
 
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-linear-to-r from-emerald-600 to-teal-700 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <span className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">
             Total gasto com repasses nesta quinzena
@@ -204,7 +213,7 @@ export default function FinanceiroLimpadoresPage() {
             ${totalGeral.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </h2>
           <p className="text-emerald-100 text-xs mt-1">
-            Período: {fortnight === 1 ? '01 a 15' : '16 ao fim'} de {meses.find((m) => m.value === month)?.label} / {year}
+            Período: {fortnight === 1 ? '01 a 15' : '16 ao fim'} de {nomeMesAtual} / {year}
           </p>
         </div>
 
@@ -214,7 +223,7 @@ export default function FinanceiroLimpadoresPage() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
         <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
           <h3 className="font-semibold text-gray-700 text-sm">Resumo por Limpadora</h3>
           <span className="text-xs text-gray-500">{relatorio.length} participante(s)</span>
@@ -226,7 +235,7 @@ export default function FinanceiroLimpadoresPage() {
           </div>
         ) : relatorio.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
-            Nenhum serviço realizado na {fortnight}ª quinzena de {meses.find((m) => m.value === month)?.label}.
+            Nenhum serviço realizado na {fortnight}ª quinzena de {nomeMesAtual}.
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
@@ -235,30 +244,43 @@ export default function FinanceiroLimpadoresPage() {
 
               return (
                 <div key={item.cleanerId} className="flex flex-col">
-                  {/* Item do Cabeçalho (Clicável para expandir) */}
-                  <div
-                    onClick={() => toggleExpand(item.cleanerId)}
-                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 transition"
-                  >
+                  {/* Item do Cabeçalho */}
+                  <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition">
                     <div className="space-y-1">
                       <h4 className="font-bold text-gray-800 text-lg">{item.cleanerName}</h4>
                       <p className="text-xs text-gray-500">{item.cleanerEmail}</p>
 
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-3 pt-1">
                         <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-medium">
                           {item.totalServicos} {item.totalServicos === 1 ? 'serviço realizado' : 'serviços realizados'}
                         </span>
-                        <span className="text-xs text-emerald-600 font-medium hover:underline">
+
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(item.cleanerId)}
+                          className="text-xs text-emerald-600 font-medium hover:underline flex items-center gap-1 cursor-pointer"
+                        >
                           {isExpanded ? '▲ Ocultar detalhes' : '▼ Ver quais foram'}
-                        </span>
+                        </button>
                       </div>
                     </div>
 
-                    <div className="bg-emerald-50 sm:bg-transparent p-4 sm:p-0 rounded-xl text-left sm:text-right border sm:border-none border-emerald-100">
-                      <span className="text-xs text-gray-500 block font-medium">Total a pagar nesta quinzena</span>
-                      <span className="text-3xl font-extrabold text-emerald-600">
-                        ${item.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
+                    <div className="flex items-center gap-4">
+                      <div className="text-left sm:text-right">
+                        <span className="text-xs text-gray-500 block font-medium">Total a pagar nesta quinzena</span>
+                        <span className="text-3xl font-extrabold text-emerald-600">
+                          ${item.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      {/* BOTÃO GERAR PDF */}
+                      <button
+                        type="button"
+                        onClick={() => setPdfCleaner(item)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer transition shrink-0"
+                      >
+                        📄 Gerar PDF / Holerite
+                      </button>
                     </div>
                   </div>
 
@@ -274,7 +296,7 @@ export default function FinanceiroLimpadoresPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-gray-900">{svc.clientName}</span>
                               {svc.unitLabel && (
-                                <span className="bg-purple-700 text-white border border-purple-800 px-2.5 py-0.5 rounded-md font-bold text-[11px] shadow-sm">
+                                <span className="bg-purple-700 text-white border border-purple-800 px-2.5 py-0.5 rounded-md font-bold text-[11px] shadow-xs">
                                   {svc.unitLabel}
                                 </span>
                               )}
@@ -284,7 +306,7 @@ export default function FinanceiroLimpadoresPage() {
                             </span>
                           </div>
 
-                          <span className="font-bold text-gray-700 bg-white border border-gray-200 px-2.5 py-1 rounded shadow-sm">
+                          <span className="font-bold text-gray-700 bg-white border border-gray-200 px-2.5 py-1 rounded-sm shadow-xs">
                             Repasse: ${svc.payout.toFixed(2)}
                           </span>
                         </div>
@@ -297,6 +319,99 @@ export default function FinanceiroLimpadoresPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL HOLERITE / GERAR PDF */}
+      {pdfCleaner && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 w-full max-w-2xl rounded-2xl p-6 shadow-2xl relative space-y-6">
+            
+            <div className="flex items-center justify-between border-b pb-4">
+              <h3 className="text-sm font-bold text-gray-700">Comprovante de Pagamento</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  🖨️ Imprimir / Salvar PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfCleaner(null)}
+                  className="p-2 text-gray-400 hover:text-gray-700 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white text-gray-900 p-2 space-y-6">
+              <div className="flex justify-between items-start border-b border-gray-200 pb-4">
+                <div>
+                  <h1 className="text-2xl font-black text-emerald-700 uppercase">Brazilian Cleaners</h1>
+                  <p className="text-xs text-gray-500">Demonstrativo de Repasse de Serviços</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase">PERÍODO</span>
+                  <span className="text-xs font-bold text-gray-700 block">
+                    {fortnight === 1 ? '1ª Quinzena (01 a 15)' : '2ª Quinzena (16 ao fim)'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {nomeMesAtual} / {year}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl border border-gray-200 text-xs">
+                <span className="text-gray-400 font-bold block text-[10px] uppercase">Profissional</span>
+                <strong className="text-base text-gray-800">{pdfCleaner.cleanerName}</strong>
+                {pdfCleaner.cleanerEmail && <p className="text-gray-500">{pdfCleaner.cleanerEmail}</p>}
+              </div>
+
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-300 text-gray-500">
+                    <th className="py-2">Data</th>
+                    <th className="py-2">Unidade / Cliente</th>
+                    <th className="py-2 text-right">Repasse</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pdfCleaner.servicos.map((svc) => (
+                    <tr key={svc.id}>
+                      <td className="py-2.5">
+                        {new Date(`${svc.date}T00:00:00`).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="py-2.5">
+                        <span className="font-bold block text-gray-900">{svc.clientName}</span>
+                        {svc.unitLabel && (
+                          <span className="text-[10px] text-purple-700 font-semibold">
+                            {svc.unitLabel}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 text-right font-bold text-gray-900">
+                        ${svc.payout.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="border-t-2 border-gray-900 pt-4 flex justify-between items-center">
+                <p className="text-[11px] text-gray-500 italic">Obrigado pela sua parceria!</p>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-gray-500 block uppercase">TOTAL A RECEBER</span>
+                  <span className="text-2xl font-black text-emerald-600">
+                    ${pdfCleaner.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   )
 }

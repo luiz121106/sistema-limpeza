@@ -32,8 +32,13 @@ export default function DashboardPage() {
       const { count: cleaners } = await supabase.from('cleaners').select('*', { count: 'exact', head: true }).eq('active', true)
       setCleanerCount(cleaners || 0)
 
-      // 3. Limpezas hoje
-      const today = new Date().toISOString().split('T')[0]
+      // 3. Limpezas hoje (Ajustado para o fuso horário local do dispositivo)
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const today = `${year}-${month}-${day}`
+
       const { count: todayJobs } = await supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
@@ -41,8 +46,7 @@ export default function DashboardPage() {
       setTodayJobsCount(todayJobs || 0)
 
       // 4. Faturamento Mensal (Reseta no 1º dia de cada mês)
-      const now = new Date()
-      const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      const firstDayOfMonth = `${year}-${month}-01`
 
       const { data: completedJobs } = await supabase
         .from('jobs')

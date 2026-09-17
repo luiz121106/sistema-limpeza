@@ -12,6 +12,7 @@ import {
   Filter,
   DollarSign,
   Copy,
+  X
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -57,7 +58,10 @@ export default function HistoricoPage() {
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
-  const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  
+  // Novos estados para o filtro por intervalo de datas
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   const [selectedClient, setSelectedClient] = useState<string>('all')
 
   const loadAll = useCallback(async () => {
@@ -116,24 +120,15 @@ export default function HistoricoPage() {
     setDuplicatingId(null)
   }
 
-  const availableMonths = useMemo(() => {
-    const set = new Set(jobs.map((j) => j.scheduled_date.slice(0, 7)))
-    return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
-  }, [jobs])
-
+  // Lógica de filtragem ajustada para o intervalo de datas
   const filteredJobs = useMemo(() => {
     return jobs.filter((j) => {
-      if (selectedMonth !== 'all' && !j.scheduled_date.startsWith(selectedMonth)) return false
+      if (startDate && j.scheduled_date < startDate) return false
+      if (endDate && j.scheduled_date > endDate) return false
       if (selectedClient !== 'all' && j.client_id !== selectedClient) return false
       return true
     })
-  }, [jobs, selectedMonth, selectedClient])
-
-  function monthLabel(monthKey: string) {
-    const [year, month] = monthKey.split('-')
-    const d = new Date(Number(year), Number(month) - 1, 1)
-    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-  }
+  }, [jobs, startDate, endDate, selectedClient])
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
@@ -152,19 +147,29 @@ export default function HistoricoPage() {
       <div className="flex flex-wrap items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3">
         <Filter className="w-4 h-4 text-slate-500" />
 
-        <select
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-        >
-          <option value="all">Todos os meses</option>
-          {availableMonths.map((m) => (
-            <option key={m} value={m} className="capitalize">
-              {monthLabel(m)}
-            </option>
-          ))}
-        </select>
+        {/* Campo Data Inicial */}
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5">
+          <span className="text-xs text-slate-400">De:</span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="bg-transparent text-xs text-white focus:outline-none"
+          />
+        </div>
 
+        {/* Campo Data Final */}
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5">
+          <span className="text-xs text-slate-400">Até:</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="bg-transparent text-xs text-white focus:outline-none"
+          />
+        </div>
+
+        {/* Seleção de Cliente */}
         <select
           value={selectedClient}
           onChange={(e) => setSelectedClient(e.target.value)}
@@ -177,6 +182,20 @@ export default function HistoricoPage() {
             </option>
           ))}
         </select>
+
+        {/* Botão de Limpar Filtros */}
+        {(startDate || endDate || selectedClient !== 'all') && (
+          <button
+            onClick={() => {
+              setStartDate('')
+              setEndDate('')
+              setSelectedClient('all')
+            }}
+            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-800/50 hover:bg-slate-800 px-2 py-1.5 rounded-lg border border-slate-700/50 transition cursor-pointer"
+          >
+            <X className="w-3 h-3" /> Limpar filtros
+          </button>
+        )}
 
         <span className="text-xs text-slate-500 ml-auto">
           {filteredJobs.length} {filteredJobs.length === 1 ? 'limpeza' : 'limpezas'}
@@ -192,7 +211,7 @@ export default function HistoricoPage() {
         <div className="text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800">
           <Calendar className="w-10 h-10 text-slate-600 mx-auto mb-2" />
           <h3 className="font-semibold text-slate-300">Nenhuma limpeza encontrada</h3>
-          <p className="text-slate-500 text-sm mt-1">Tente outro filtro de mês ou cliente.</p>
+          <p className="text-slate-500 text-sm mt-1">Tente outro intervalo de datas ou cliente.</p>
         </div>
       ) : (
         <div className="space-y-2">
