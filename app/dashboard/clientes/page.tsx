@@ -295,28 +295,26 @@ export default function ClientsPage() {
   }
 
   const handleOpenEditPropertyModal = (property: Property) => {
-  setSelectedClientIdForProperty(property.client_id)
-  setEditingPropertyId(property.id)
-  setEntryCategory('unit')
-  
-  setPropertyName(property.name || '')
-  setPropertyAddress(property.address || '')
-  setPropertyType(property.property_type || '1x1')
+    setSelectedClientIdForProperty(property.client_id)
+    setEditingPropertyId(property.id)
+    setEntryCategory('unit')
+    
+    setPropertyName(property.name || '')
+    setPropertyAddress(property.address || '')
+    setPropertyType(property.property_type || '1x1')
 
-  // Puxa o preço do cliente sem zerar se for número
-  const rawPrice = property.price_standard ?? property.client_price
-  setPropertyDefaultPrice(
-    rawPrice !== undefined && rawPrice !== null ? String(rawPrice) : ''
-  )
+    const rawPrice = property.price_standard ?? property.client_price
+    setPropertyDefaultPrice(
+      rawPrice !== undefined && rawPrice !== null ? String(rawPrice) : ''
+    )
 
-  // Puxa o repasse sem zerar se for número
-  const rawPayout = property.cleaner_payout ?? property.default_payout ?? property.cleaner_price
-  setPropertyDefaultPayout(
-    rawPayout !== undefined && rawPayout !== null ? String(rawPayout) : ''
-  )
+    const rawPayout = property.cleaner_payout ?? property.default_payout ?? property.cleaner_price
+    setPropertyDefaultPayout(
+      rawPayout !== undefined && rawPayout !== null ? String(rawPayout) : ''
+    )
 
-  setShowPropertyModal(true)
-}
+    setShowPropertyModal(true)
+  }
 
   const handleOpenEditCommonAreaModal = (area: CommonArea) => {
     setSelectedClientIdForProperty(area.client_id)
@@ -361,7 +359,6 @@ export default function ClientsPage() {
         const parsedPrice = parseFloat(propertyDefaultPrice) || 0
         const parsedPayout = parseFloat(propertyDefaultPayout) || 0
 
-        // Payload estritamente compatível com as colunas da sua tabela 'properties'
         const payload: Record<string, any> = {
           client_id: selectedClientIdForProperty,
           name: propertyName,
@@ -369,7 +366,7 @@ export default function ClientsPage() {
           property_type: propertyType || '1x1',
           price_standard: parsedPrice,
           cleaner_payout: parsedPayout,
-          default_payout: parsedPayout // Preenche a coluna obrigatória mostrada no banco
+          default_payout: parsedPayout
         }
 
         let error
@@ -432,7 +429,9 @@ export default function ClientsPage() {
   const renderBadgeType = (type: string) => {
     switch (type) {
       case 'complex':
-        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Building2 className="w-3 h-3" /> Complexo / Prédios</span>
+        return <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Building2 className="w-3 h-3" /> Complexos / Prédios</span>
+      case 'post_construction':
+        return <span className="text-xs bg-orange-500/10 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full font-medium">Pós Construção</span>
       case 'vacation':
       case 'stelar':
         return <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">Vacation Rentals</span>
@@ -500,7 +499,7 @@ export default function ClientsPage() {
                       <div className="flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700">
                         <DollarSign className="w-4 h-4 text-emerald-400" />
                         <div>
-                          <span className="text-slate-400 text-[10px] block">Standard</span>
+                          <span className="text-slate-400 text-[10px] block">Regular Cleaning</span>
                           <span className="font-semibold text-emerald-400">{formatUSD(client.price_standard)}</span>
                         </div>
                       </div>
@@ -723,7 +722,8 @@ export default function ClientsPage() {
                     <option value="residential">Residencial</option>
                     <option value="commercial">Comercial</option>
                     <option value="vacation">Vacation Rentals</option>
-                    <option value="complex">Complexo / Prédios</option>
+                    <option value="complex">Complexos / Prédios</option>
+                    <option value="post_construction">Pós Construção</option>
                   </select>
                 </div>
               </div>
@@ -741,9 +741,9 @@ export default function ClientsPage() {
 
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-slate-700/70 space-y-3">
                 <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Tabela de Preços Padrão ($ USD)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Standard</label>
+                    <label className="block text-[11px] text-slate-400 mb-1">Regular Cleaning</label>
                     <input
                       type="number"
                       step="0.01"
@@ -754,7 +754,7 @@ export default function ClientsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Pesada (Deep)</label>
+                    <label className="block text-[11px] text-slate-400 mb-1">Deep Clean</label>
                     <input
                       type="number"
                       step="0.01"
@@ -765,23 +765,12 @@ export default function ClientsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Move-In/Out</label>
+                    <label className="block text-[11px] text-slate-400 mb-1">Touch up</label>
                     <input
                       type="number"
                       step="0.01"
                       value={priceMoveInOut}
                       onChange={(e) => setPriceMoveInOut(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Vacation/Airbnb</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={priceVacation}
-                      onChange={(e) => setPriceVacation(e.target.value)}
                       placeholder="0.00"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                     />

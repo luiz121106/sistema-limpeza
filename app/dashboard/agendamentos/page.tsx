@@ -96,17 +96,23 @@ export interface PropertyCommonArea {
 }
 
 const SERVICE_TYPE_STYLES: Record<string, { bg: string; border: string; badge: string; label: string }> = {
-  Standard: {
+  'Regular Cleaning': {
     bg: 'bg-emerald-950/20 hover:bg-emerald-950/40',
     border: 'border-emerald-500/40',
     badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    label: 'Standard'
+    label: 'Regular Cleaning'
   },
-  Pesada: {
+  'Deep Cleaning': {
     bg: 'bg-amber-950/20 hover:bg-amber-950/40',
     border: 'border-amber-500/40',
     badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    label: 'Pesada'
+    label: 'Deep Cleaning'
+  },
+  'Touch-Up Cleaning': {
+    bg: 'bg-rose-950/20 hover:bg-rose-950/40',
+    border: 'border-rose-500/40',
+    badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    label: 'Touch-Up Cleaning'
   },
   'Move-In/Out': {
     bg: 'bg-rose-950/20 hover:bg-rose-950/40',
@@ -154,7 +160,7 @@ export default function CalendarPage() {
   const [cleanerId, setCleanerId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('09:00')
-  const [serviceType, setServiceType] = useState('Standard')
+  const [serviceType, setServiceType] = useState('Regular Cleaning')
   const [price, setPrice] = useState('')
   const [extraPrice, setExtraPrice] = useState('0')
   const [payout, setPayout] = useState('')
@@ -337,7 +343,7 @@ export default function CalendarPage() {
     setCleanerId('')
     setScheduledDate(initialDate || formatLocalDate(new Date()))
     setScheduledTime('09:00')
-    setServiceType('Standard')
+    setServiceType('Regular Cleaning')
     setPrice('')
     setExtraPrice('0')
     setPayout('')
@@ -400,7 +406,7 @@ export default function CalendarPage() {
     setCleanerId(job.cleaner_id || '')
     setScheduledDate(job.scheduled_date || '')
     setScheduledTime(job.scheduled_time || '09:00')
-    setServiceType(job.service_type || 'Standard')
+    setServiceType(job.service_type || 'Regular Cleaning')
     setPrice(job.price ? String(job.price) : '')
     setExtraPrice(job.extra_price ? String(job.extra_price) : '0')
     setPayout(job.payout ? String(job.payout) : '')
@@ -749,7 +755,7 @@ export default function CalendarPage() {
                 const basePrice = Number(job.price || 0)
                 const extraPriceNum = Number(job.extra_price || 0)
                 const totalPrice = basePrice + extraPriceNum
-                const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
+                const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Regular Cleaning']
                 const unitLabel = getJobUnitLabel(job)
                 const jobAddress = getJobAddress(job)
 
@@ -856,7 +862,7 @@ export default function CalendarPage() {
                       <p className="text-[10px] text-slate-500 italic text-center py-4">Sem limpezas</p>
                     ) : (
                       dayJobs.map((job) => {
-                        const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Standard']
+                        const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Regular Cleaning']
                         const totalPrice = Number(job.price || 0) + Number(job.extra_price || 0)
                         const assignedCleaner = job.cleaners?.name || job.cleaner_name
                         const unitLabel = getJobUnitLabel(job)
@@ -1044,7 +1050,7 @@ export default function CalendarPage() {
                                 <span>{area.name}</span>
                               </div>
                               <span className="text-slate-400 text-[10px]">
-                                Cliente: ${area.client_price} | Repasse: ${area.cleaner_price}
+                                Cliente: ${area.client_price} \vert{} Repasse:${area.cleaner_price}
                               </span>
                             </label>
                           ))}
@@ -1162,8 +1168,9 @@ export default function CalendarPage() {
                     onChange={(e) => handleServiceTypeChange(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-white"
                   >
-                    <option value="Standard">Standard</option>
-                    <option value="Pesada">Pesada</option>
+                    <option value="Regular Cleaning">Regular Cleaning</option>
+                    <option value="Deep Cleaning">Deep Cleaning</option>
+                    <option value="Touch-Up Cleaning">Touch-Up Cleaning</option>
                     <option value="Move-In/Out">Move-In/Out</option>
                     <option value="Vacation">Vacation / Airbnb</option>
                   </select>
