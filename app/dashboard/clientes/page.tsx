@@ -93,8 +93,8 @@ export default function ClientsPage() {
   const [clientType, setClientType] = useState('residential')
   const [priceStandard, setPriceStandard] = useState('')
   const [priceHeavy, setPriceHeavy] = useState('')
-  const [priceMoveInOut, setPriceMoveInOut] = useState('')
-  const [priceVacation, setPriceVacation] = useState('')
+  const [priceVacation, setPriceVacation] = useState('') // Touch up
+  const [priceMoveInOut, setPriceMoveInOut] = useState('') // Move-in / Move-out
   const [cleanerPayout, setCleanerPayout] = useState('')
   const [notes, setNotes] = useState('')
   const [adminNotes, setAdminNotes] = useState('')
@@ -201,8 +201,8 @@ export default function ClientsPage() {
     setClientType('residential')
     setPriceStandard('')
     setPriceHeavy('')
-    setPriceMoveInOut('')
     setPriceVacation('')
+    setPriceMoveInOut('')
     setCleanerPayout('')
     setNotes('')
     setAdminNotes('')
@@ -218,8 +218,8 @@ export default function ClientsPage() {
     setClientType(client.client_type || 'residential')
     setPriceStandard(client.price_standard?.toString() || '0')
     setPriceHeavy(client.price_heavy?.toString() || '0')
-    setPriceMoveInOut(client.price_move_in_out?.toString() || '0')
     setPriceVacation(client.price_vacation?.toString() || '0')
+    setPriceMoveInOut(client.price_move_in_out?.toString() || '0')
     setCleanerPayout(client.cleaner_payout?.toString() || '0')
     setNotes(client.notes || '')
     setAdminNotes(client.admin_notes || '')
@@ -239,8 +239,8 @@ export default function ClientsPage() {
         client_type: clientType,
         price_standard: parseFloat(priceStandard) || 0,
         price_heavy: parseFloat(priceHeavy) || 0,
-        price_move_in_out: parseFloat(priceMoveInOut) || 0,
         price_vacation: parseFloat(priceVacation) || 0,
+        price_move_in_out: parseFloat(priceMoveInOut) || 0,
         cleaner_payout: parseFloat(cleanerPayout) || 0,
         notes: notes || null,
         admin_notes: adminNotes || null,
@@ -741,7 +741,7 @@ export default function ClientsPage() {
 
               <div className="bg-slate-900/50 p-3.5 rounded-xl border border-slate-700/70 space-y-3">
                 <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Tabela de Preços Padrão ($ USD)</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-400 mb-1">Regular Cleaning</label>
                     <input
@@ -766,6 +766,17 @@ export default function ClientsPage() {
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-400 mb-1">Touch up</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={priceVacation}
+                      onChange={(e) => setPriceVacation(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Move-in / Move-out</label>
                     <input
                       type="number"
                       step="0.01"
