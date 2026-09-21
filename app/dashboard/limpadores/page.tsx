@@ -137,28 +137,25 @@ export default function LimpadoresPage() {
     fetchCleaners()
   }
 
-  // Excluir Limpador
+  // Excluir Limpador (CORRIGIDO: Supabase direto)
   const handleDeleteCleaner = async (cleanerId: string) => {
-    if (!confirm('Deseja realmente excluir este limpador? O acesso dele será revogado.')) return
+    if (!confirm('Deseja realmente excluir este limpador?')) return
 
     try {
-      const response = await fetch('/api/cleaners/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cleanerId }),
-      })
+      const { error } = await supabase
+        .from('cleaners')
+        .delete()
+        .eq('id', cleanerId)
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao excluir')
+      if (error) {
+        throw error
       }
 
-      alert('Limpador e login excluídos com sucesso!')
+      alert('Limpador excluído com sucesso!')
       fetchCleaners()
     } catch (error: unknown) {
       const err = error as Error
-      alert('Erro: ' + err.message)
+      alert('Erro ao excluir: ' + err.message)
     }
   }
 

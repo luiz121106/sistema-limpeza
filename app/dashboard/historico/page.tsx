@@ -12,9 +12,18 @@ import {
   Filter,
   DollarSign,
   Copy,
-  X
+  X,
+  FileText,
+  Building
 } from 'lucide-react'
 import Link from 'next/link'
+
+interface ClientData {
+  id?: string
+  name: string
+  address?: string
+  unit?: string
+}
 
 interface HistoryJob {
   id: string
@@ -29,8 +38,8 @@ interface HistoryJob {
   cleaner_id?: string | null
   cleaner_payout?: number | string | null
   notes?: string | null
-  clients: { name: string; address: string } | null
-  cleaners: { name: string } | null
+  clients: ClientData | ClientData[] | null
+  cleaners: { name: string } | { name: string }[] | null
   cleaner_name: string | null
 }
 
@@ -53,13 +62,30 @@ const statusStyle: Record<HistoryJob['status'], string> = {
   cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
 }
 
+function getClientData(job: HistoryJob): ClientData | null {
+  if (!job.clients) return null
+  if (Array.isArray(job.clients)) {
+    return job.clients[0] || null
+  }
+  return job.clients
+}
+
+function getCleanerName(job: HistoryJob): string {
+  if (job.cleaner_name) return job.cleaner_name
+  if (!job.cleaners) return 'Não atribuído'
+  if (Array.isArray(job.cleaners)) {
+    return job.cleaners[0]?.name || 'Não atribuído'
+  }
+  return job.cleaners.name || 'Não atribuído'
+}
+
 export default function HistoricoPage() {
   const [jobs, setJobs] = useState<HistoryJob[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   
-  // Novos estados para o filtro por intervalo de datas
+  // Filtros por intervalo de datas e cliente
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [selectedClient, setSelectedClient] = useState<string>('all')
@@ -70,7 +96,7 @@ export default function HistoricoPage() {
     const [{ data: jobsData }, { data: clientsData }] = await Promise.all([
       supabase
         .from('jobs')
-        .select('*, clients(name, address), cleaners(name)')
+        .select('*, clients(*), cleaners(name)')
         .order('scheduled_date', { ascending: false })
         .order('scheduled_time', { ascending: false }),
       supabase.from('clients').select('id, name').order('name'),
@@ -86,7 +112,8 @@ export default function HistoricoPage() {
   }, [loadAll])
 
   const handleDuplicateJob = async (job: HistoryJob) => {
-    const clientName = job.clients?.name || 'Cliente'
+    const client = getClientData(job)
+    const clientName = client?.name || 'Cliente'
     if (!confirm(`Duplicar a limpeza de "${clientName}" e enviar para os novos Agendamentos?`)) return
 
     setDuplicatingId(job.id)
@@ -120,7 +147,7 @@ export default function HistoricoPage() {
     setDuplicatingId(null)
   }
 
-  // Lógica de filtragem ajustada para o intervalo de datas
+  // Filtragem dos registos
   const filteredJobs = useMemo(() => {
     return jobs.filter((j) => {
       if (startDate && j.scheduled_date < startDate) return false
@@ -130,17 +157,173 @@ export default function HistoricoPage() {
     })
   }, [jobs, startDate, endDate, selectedClient])
 
+  // Gerador de PDF
+  const handleGeneratePDF = () => {
+    if (filteredJobs.length === 0) {
+      alert('Nenhuma limpeza encontrada para gerar o PDF.')
+      return
+    }
+
+    const totalValor = filteredJobs.reduce((acc, j) => acc + Number(j.price || 0) + Number(j.extra_price || 0), 0)
+    const clientSelectedName = selectedClient !== 'all' 
+      ? clients.find(c => c.id === selectedClient)?.name || 'Cliente Específico' 
+      : 'Todos os Clientes'
+
+    const periodText = (startDate || endDate) 
+      ? `${startDate ? new Date(`${startDate}T00:00:00`).toLocaleDateString('pt-BR') : 'Início'} até ${endDate ? new Date(`${endDate}T00:00:00`).toLocaleDateString('pt-BR') : 'Hoje'}`
+      : 'Período Completo'
+
+    const rows = filteredJobs.map(j => {
+      const client = getClientData(j)
+      const total = Number(j.price || 0) + Number(j.extra_price || 0)
+      const cleaner = getCleanerName(j)
+      const unitName = client?.unit || '-'
+      const dateFormatted = new Date(`${j.scheduled_date}T00:00:00`).toLocaleDateString('pt-BR')
+      const statusText = statusLabel[j.status] || j.status
+      const unitBadge = unitName !== '-' ? `<span class="badge badge-unit">${unitName}</span>` : '-'
+
+      return `
+        <tr>
+          <td><strong>${dateFormatted}</strong> - ${j.scheduled_time}</td>
+          <td><strong>${client?.name || 'Sem cliente'}</strong></td>
+          <td>${unitBadge}</td>
+          <td>${j.service_type}</td>
+          <td>${cleaner}</td>
+          <td>${statusText}</td>
+          <td style="text-align: right; font-weight: bold; color: #047857;">&#36;${total.toFixed(2)}</td>
+        </tr>
+      `
+    }).join('')
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Resumo de Limpezas</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 30px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #059669; padding-bottom: 15px; margin-bottom: 25px; }
+            .brand { font-size: 24px; font-weight: bold; color: #059669; }
+            .title { font-size: 16px; font-weight: 600; color: #0f172a; margin-top: 5px; }
+            .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; font-size: 12px; }
+            .info-item span { color: #64748b; font-weight: 500; display: block; margin-bottom: 3px; }
+            .info-item strong { color: #0f172a; font-size: 13px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 11px; }
+            th { background-color: #0f172a; color: #ffffff; text-align: left; padding: 10px; font-weight: 600; }
+            td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            .badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; }
+            .badge-unit { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+            .total-card { float: right; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 12px 20px; border-radius: 8px; text-align: right; }
+            .total-card span { color: #047857; font-size: 11px; font-weight: 600; }
+            .total-card h2 { color: #065f46; margin: 3px 0 0 0; font-size: 20px; }
+            .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="brand">Relatório de Limpezas</div>
+              <div class="title">Resumo Operacional & Financeiro</div>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #64748b;">
+              Gerado em: ${new Date().toLocaleDateString('pt-BR')}
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-item">
+              <span>CLIENTE</span>
+              <strong>${clientSelectedName}</strong>
+            </div>
+            <div class="info-item">
+              <span>PERÍODO</span>
+              <strong>${periodText}</strong>
+            </div>
+            <div class="info-item">
+              <span>TOTAL REGISTOS</span>
+              <strong>${filteredJobs.length} limpeza(s)</strong>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Data / Hora</th>
+                <th>Cliente</th>
+                <th>Unidade</th>
+                <th>Serviço</th>
+                <th>Limpador</th>
+                <th>Status</th>
+                <th style="text-align: right;">Valor ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+
+          <div class="total-card">
+            <span>VALOR TOTAL DO PERÍODO</span>
+            <h2>&#36;${totalValor.toFixed(2)}</h2>
+          </div>
+
+          <div style="clear: both;"></div>
+
+          <div class="footer">
+            Relatório gerado automaticamente pelo Sistema de Gestão de Limpezas.
+          </div>
+        </body>
+      </html>
+    `
+
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow?.document
+    if (doc) {
+      doc.open()
+      doc.write(htmlContent)
+      doc.close()
+
+      setTimeout(() => {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+        setTimeout(() => {
+          document.body.removeChild(iframe)
+        }, 1000)
+      }, 500)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
       {/* Topbar */}
-      <div className="flex items-center gap-3">
-        <Link
-          href="/dashboard"
-          className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition"
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard"
+            className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-xl font-bold text-emerald-400">Histórico de Limpezas</h1>
+        </div>
+
+        {/* Botão de PDF */}
+        <button
+          onClick={handleGeneratePDF}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition cursor-pointer active:scale-95 shadow-md"
+          title="Baixar resumo formatado em PDF"
         >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-xl font-bold text-emerald-400">Histórico de Limpezas</h1>
+          <FileText className="w-4 h-4" /> Baixar PDF
+        </button>
       </div>
 
       {/* Filtros */}
@@ -216,9 +399,11 @@ export default function HistoricoPage() {
       ) : (
         <div className="space-y-2">
           {filteredJobs.map((j) => {
+            const client = getClientData(j)
+            const cleanerName = getCleanerName(j)
             const total = Number(j.price || 0) + Number(j.extra_price || 0)
-            const cleanerName = j.cleaners?.name || j.cleaner_name
             const isDuplicating = duplicatingId === j.id
+            const unitName = client?.unit
 
             return (
               <div
@@ -227,7 +412,15 @@ export default function HistoricoPage() {
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-white">{j.clients?.name ?? 'Sem cliente'}</span>
+                    <span className="font-bold text-white">{client?.name ?? 'Sem cliente'}</span>
+                    
+                    {/* Exibição da Unidade */}
+                    {unitName && (
+                      <span className="text-xs bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                        <Building className="w-3 h-3" /> {unitName}
+                      </span>
+                    )}
+
                     <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
                       {j.service_type}
                     </span>
@@ -248,12 +441,13 @@ export default function HistoricoPage() {
                       </span>
                     )}
                   </div>
-                  {j.clients?.address && (
+
+                  {client?.address && (
                     <p className="text-xs text-slate-400 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500" /> {j.clients.address}
+                      <MapPin className="w-3.5 h-3.5 text-slate-500" /> {client.address}
                     </p>
                   )}
-                  {cleanerName && (
+                  {cleanerName !== 'Não atribuído' && (
                     <p className="text-xs text-slate-400 flex items-center gap-1">
                       <UserCheck className="w-3.5 h-3.5 text-slate-500" /> {cleanerName}
                     </p>
