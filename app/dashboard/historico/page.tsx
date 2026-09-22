@@ -14,7 +14,6 @@ import {
   Copy,
   X,
   FileText,
-  Building,
   Home
 } from 'lucide-react'
 import Link from 'next/link'
@@ -95,24 +94,31 @@ function getCleanerName(job: HistoryJob): string {
   return job.cleaners.name || 'Não atribuído'
 }
 
-// Lógica de identificação do identificador da unidade/notas (ex: "1209 2x2", "127 - 123")
 function resolveUnitName(job: HistoryJob): string | null {
-  // 1. Se houver anotação no job (campo notes), ela tem prioridade total para Move-In/Out
+  let rawText = ''
+
   if (job.notes && job.notes.trim()) {
-    return job.notes.trim()
-  }
+    rawText = job.notes.trim()
+  } else {
+    const property = getPropertyData(job)
+    const client = getClientData(job)
 
-  // 2. Se não houver notas, busca na tabela properties
-  const property = getPropertyData(job)
-  const client = getClientData(job)
-
-  if (property?.name && property.name.trim()) {
-    if (!client?.name || property.name.trim().toLowerCase() !== client.name.trim().toLowerCase()) {
-      return property.name.trim()
+    if (property?.name && property.name.trim()) {
+      if (!client?.name || property.name.trim().toLowerCase() !== client.name.trim().toLowerCase()) {
+        rawText = property.name.trim()
+      }
     }
   }
 
-  return null
+  if (!rawText) return null
+
+  // Remove prefixos como [Unidade/Especificação:], Unidade:, e colchetes
+  const cleaned = rawText
+    .replace(/^\[?Unidade\s*\/\s*Especificação:?\s*/i, '')
+    .replace(/^\[?Unidade:?\s*/i, '')     .replace(/[\[\]]/g, '')
+    .trim()
+
+  return cleaned || null
 }
 
 export default function HistoricoPage() {
@@ -121,7 +127,6 @@ export default function HistoricoPage() {
   const [loading, setLoading] = useState(true)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   
-  // Filtros
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [selectedClient, setSelectedClient] = useState<string>('all')
@@ -608,10 +613,10 @@ export default function HistoricoPage() {
                     )}
                   </div>
 
-                  {/* Faixa em destaque da Unidade / Notas (Efeito Purple idêntico ao do card) */}
+                  {/* Badge da Unidade Simplificada (apenas ícone + nome) */}
                   {unitName && (
-                    <div className="bg-purple-950/40 border border-purple-800/40 text-purple-300 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 w-full lg:w-fit">
-                      <Home className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <div className="bg-purple-950/40 border border-purple-800/40 text-purple-300 px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1.5 w-fit">
+                      <Home className="w-3 h-3 text-purple-400 shrink-0" />
                       <span>{unitName}</span>
                     </div>
                   )}
