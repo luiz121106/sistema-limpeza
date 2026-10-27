@@ -489,9 +489,9 @@ export default function HistoricoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-6 overflow-x-hidden">
       {/* Topbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard"
@@ -499,45 +499,50 @@ export default function HistoricoPage() {
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-xl font-bold text-emerald-400">Histórico de Limpezas</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-emerald-400">Histórico de Limpezas</h1>
         </div>
 
         <button
           onClick={handleGeneratePDF}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition cursor-pointer active:scale-95 shadow-md"
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-xs flex items-center gap-1.5 sm:gap-2 transition cursor-pointer active:scale-95 shadow-md shrink-0"
         >
-          <FileText className="w-4 h-4" /> Baixar PDF
+          <FileText className="w-4 h-4" /> <span className="hidden xs:inline">Baixar </span>PDF
         </button>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-        <Filter className="w-4 h-4 text-slate-500" />
-
-        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5">
-          <span className="text-xs text-slate-400">De:</span>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="bg-transparent text-xs text-white focus:outline-none"
-          />
+      {/* Filtros Responsivos */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3 w-full max-w-full box-border">
+        <div className="flex items-center gap-2 text-slate-500 font-medium text-xs">
+          <Filter className="w-4 h-4 shrink-0" />
+          <span className="sm:hidden text-slate-400">Filtros:</span>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5">
-          <span className="text-xs text-slate-400">Até:</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="bg-transparent text-xs text-white focus:outline-none"
-          />
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full">
+            <span className="text-xs text-slate-400 shrink-0">De:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent text-xs text-white focus:outline-none w-full min-w-0"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full">
+            <span className="text-xs text-slate-400 shrink-0">Até:</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent text-xs text-white focus:outline-none w-full min-w-0"
+            />
+          </div>
         </div>
 
         <select
           value={selectedClient}
           onChange={(e) => setSelectedClient(e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
         >
           <option value="all">Todos os clientes</option>
           {clients.map((c) => (
@@ -547,11 +552,11 @@ export default function HistoricoPage() {
           ))}
         </select>
 
-        {/* Novo Filtro de Categoria (Área Comum vs Unidades) */}
+        {/* Filtro de Categoria (Área Comum vs Unidades) */}
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value as 'all' | 'common_area' | 'unit')}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
         >
           <option value="all">🏢 All Types (Common Area & Units)</option>
           <option value="common_area">🧹 Common Area Only</option>
@@ -562,7 +567,7 @@ export default function HistoricoPage() {
           <select
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
           >
             <option value="all">Todas as unidades</option>
             {availableUnits.map((u) => (
@@ -573,24 +578,26 @@ export default function HistoricoPage() {
           </select>
         )}
 
-        {(startDate || endDate || selectedClient !== 'all' || selectedUnit !== 'all' || selectedCategory !== 'all') && (
-          <button
-            onClick={() => {
-              setStartDate('')
-              setEndDate('')
-              setSelectedClient('all')
-              setSelectedUnit('all')
-              setSelectedCategory('all')
-            }}
-            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-800/50 hover:bg-slate-800 px-2 py-1.5 rounded-lg border border-slate-700/50 transition cursor-pointer"
-          >
-            <X className="w-3 h-3" /> Limpar filtros
-          </button>
-        )}
+        <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto sm:ml-auto pt-1 sm:pt-0 border-t border-slate-800/60 sm:border-t-0">
+          {(startDate || endDate || selectedClient !== 'all' || selectedUnit !== 'all' || selectedCategory !== 'all') && (
+            <button
+              onClick={() => {
+                setStartDate('')
+                setEndDate('')
+                setSelectedClient('all')
+                setSelectedUnit('all')
+                setSelectedCategory('all')
+              }}
+              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-800/50 hover:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700/50 transition cursor-pointer"
+            >
+              <X className="w-3 h-3" /> Limpar filtros
+            </button>
+          )}
 
-        <span className="text-xs text-slate-500 ml-auto">
-          {filteredJobs.length} {filteredJobs.length === 1 ? 'limpeza' : 'limpezas'}
-        </span>
+          <span className="text-xs text-slate-500 ml-auto sm:ml-0 font-medium">
+            {filteredJobs.length} {filteredJobs.length === 1 ? 'limpeza' : 'limpezas'}
+          </span>
+        </div>
       </div>
 
       {/* Lista */}
@@ -645,11 +652,11 @@ export default function HistoricoPage() {
                     )}
                   </div>
 
-                  {/* Badge da Unidade Simplificada (apenas ícone + nome) */}
+                  {/* Badge da Unidade Simplificada */}
                   {unitName && (
-                    <div className="bg-purple-950/40 border border-purple-800/40 text-purple-300 px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1.5 w-fit">
+                    <div className="bg-purple-950/40 border border-purple-800/40 text-purple-300 px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1.5 max-w-full">
                       <Home className="w-3 h-3 text-purple-400 shrink-0" />
-                      <span>{unitName}</span>
+                      <span className="truncate">{unitName}</span>
                     </div>
                   )}
 
@@ -665,7 +672,7 @@ export default function HistoricoPage() {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 text-xs text-slate-300">
+                <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 text-xs text-slate-300 pt-2 lg:pt-0 border-t border-slate-800/50 lg:border-t-0">
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-emerald-400" />
