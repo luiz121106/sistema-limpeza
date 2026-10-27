@@ -24,7 +24,7 @@ export default function DashboardPage() {
         const { data: { session }, error: authError } = await supabase.auth.getSession()
 
         if (authError || !session || !session.user) {
-          router.replace('/login')
+          router.replace('/limpador/login')
           return
         }
 
@@ -72,7 +72,7 @@ export default function DashboardPage() {
         setLoading(false)
       } catch (err) {
         console.error('Erro ao carregar o dashboard:', err)
-        router.replace('/login')
+        router.replace('/limpador/login')
       }
     }
 
@@ -81,7 +81,7 @@ export default function DashboardPage() {
     // Monitoriza alterações no estado de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
-        router.replace('/login')
+        router.replace('/limpador/login')
       }
     })
 
@@ -92,7 +92,7 @@ export default function DashboardPage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    router.replace('/login')
+    router.replace('/limpador/login')
   }
 
   if (loading) {
