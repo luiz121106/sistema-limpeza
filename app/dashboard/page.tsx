@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet, Globe } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   
@@ -17,67 +19,86 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function initDashboard() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = '/'
-        return
+      try {
+        // 1. Verifica sessão e dados do utilizador
+        const { data: { session }, error: authError } = await supabase.auth.getSession()
+
+        if (authError || !session || !session.user) {
+          router.replace('/login')
+          return
+        }
+
+        setUser(session.user)
+
+        // 2. Total de clientes
+        const { count: clients } = await supabase.from('clients').select('*', { count: 'exact', head: true })
+        setClientCount(clients || 0)
+
+        // 3. Total de limpadores ativos
+        const { count: cleaners } = await supabase.from('cleaners').select('*', { count: 'exact', head: true }).eq('active', true)
+        setCleanerCount(cleaners || 0)
+
+        // 4. Limpezas hoje (Ajustado para o fuso horário local do dispositivo)
+        const now = new Date()
+        const year = now.getFullYear()
+        const month = String(now.getMonth() + 1).padStart(2, '0')
+        const day = String(now.getDate()).padStart(2, '0')
+        const today = `${year}-${month}-${day}`
+
+        const { count: todayJobs } = await supabase
+          .from('jobs')
+          .select('*', { count: 'exact', head: true })
+          .eq('scheduled_date', today)
+        setTodayJobsCount(todayJobs || 0)
+
+        // 5. Faturamento Mensal (Reseta no 1º dia de cada mês)
+        const firstDayOfMonth = `${year}-${month}-01`
+
+        const { data: completedJobs } = await supabase
+          .from('jobs')
+          .select('price, extra_price')
+          .eq('status', 'completed')
+          .gte('scheduled_date', firstDayOfMonth)
+
+        if (completedJobs) {
+          const total = completedJobs.reduce((sum, item) => {
+            const base = Number(item.price || 0)
+            const extra = Number(item.extra_price || 0)
+            return sum + base + extra
+          }, 0)
+          setWeeklyRevenue(total)
+        }
+
+        setLoading(false)
+      } catch (err) {
+        console.error('Erro ao carregar o dashboard:', err)
+        router.replace('/login')
       }
-      setUser(user)
-
-      // 1. Total de clientes
-      const { count: clients } = await supabase.from('clients').select('*', { count: 'exact', head: true })
-      setClientCount(clients || 0)
-
-      // 2. Total de limpadores ativos
-      const { count: cleaners } = await supabase.from('cleaners').select('*', { count: 'exact', head: true }).eq('active', true)
-      setCleanerCount(cleaners || 0)
-
-      // 3. Limpezas hoje (Ajustado para o fuso horário local do dispositivo)
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = String(now.getMonth() + 1).padStart(2, '0')
-      const day = String(now.getDate()).padStart(2, '0')
-      const today = `${year}-${month}-${day}`
-
-      const { count: todayJobs } = await supabase
-        .from('jobs')
-        .select('*', { count: 'exact', head: true })
-        .eq('scheduled_date', today)
-      setTodayJobsCount(todayJobs || 0)
-
-      // 4. Faturamento Mensal (Reseta no 1º dia de cada mês)
-      const firstDayOfMonth = `${year}-${month}-01`
-
-      const { data: completedJobs } = await supabase
-        .from('jobs')
-        .select('price, extra_price')
-        .eq('status', 'completed')
-        .gte('scheduled_date', firstDayOfMonth)
-
-      if (completedJobs) {
-        const total = completedJobs.reduce((sum, item) => {
-          const base = Number(item.price || 0)
-          const extra = Number(item.extra_price || 0)
-          return sum + base + extra
-        }, 0)
-        setWeeklyRevenue(total)
-      }
-
-      setLoading(false)
     }
 
     initDashboard()
-  }, [])
+
+    // Monitoriza alterações no estado de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        router.replace('/login')
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    window.location.href = '/'
+    router.replace('/login')
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
-        Carregando painel...
+        <p className="animate-pulse">Carregando painel...</p>
       </div>
     )
   }
