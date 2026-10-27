@@ -43,6 +43,7 @@ interface HistoryJob {
   cleaner_id?: string | null
   cleaner_payout?: number | string | null
   notes?: string | null
+  target_type?: string | null
   property_id?: string | null
   clients: ClientData | ClientData[] | null
   properties: PropertyData | PropertyData[] | null
@@ -115,7 +116,8 @@ function resolveUnitName(job: HistoryJob): string | null {
   // Remove prefixos como [Unidade/Especificação:], Unidade:, e colchetes
   const cleaned = rawText
     .replace(/^\[?Unidade\s*\/\s*Especificação:?\s*/i, '')
-    .replace(/^\[?Unidade:?\s*/i, '')     .replace(/[\[\]]/g, '')
+    .replace(/^\[?Unidade:?\s*/i, '')
+    .replace(/[\[\]]/g, '')
     .trim()
 
   return cleaned || null
@@ -131,6 +133,8 @@ export default function HistoricoPage() {
   const [endDate, setEndDate] = useState<string>('')
   const [selectedClient, setSelectedClient] = useState<string>('all')
   const [selectedUnit, setSelectedUnit] = useState<string>('all')
+  // Filtro de Categoria (Área Comum vs Unidades / Move-in & Move-out)
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'common_area' | 'unit'>('all')
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -183,6 +187,7 @@ export default function HistoricoPage() {
       extra_price: job.extra_price ?? 0,
       cleaner_payout: job.cleaner_payout ?? 0,
       notes: job.notes ?? null,
+      target_type: job.target_type ?? null,
       status: 'pending',
       payment_status: 'a_receber',
     }
@@ -210,9 +215,16 @@ export default function HistoricoPage() {
         if (u !== selectedUnit) return false
       }
 
+      // Filtro por Categoria (Área Comum vs Unidades/Move-in)
+      if (selectedCategory !== 'all') {
+        const isCommonArea = j.target_type === 'common_area' || j.notes?.toLowerCase().includes('área comum') || j.notes?.toLowerCase().includes('area comum')
+        if (selectedCategory === 'common_area' && !isCommonArea) return false
+        if (selectedCategory === 'unit' && isCommonArea) return false
+      }
+
       return true
     })
-  }, [jobs, startDate, endDate, selectedClient, selectedUnit])
+  }, [jobs, startDate, endDate, selectedClient, selectedUnit, selectedCategory])
 
   const handleGeneratePDF = () => {
     if (filteredJobs.length === 0) {
@@ -227,6 +239,10 @@ export default function HistoricoPage() {
       const foundClient = clients.find(c => c.id === selectedClient)
       if (foundClient) clientSelectedName = foundClient.name
     }
+
+    let categoryText = 'Todos os Serviços'
+    if (selectedCategory === 'common_area') categoryText = 'Apenas Área Comum'
+    if (selectedCategory === 'unit') categoryText = 'Apenas Unidades / Move-in & Move-out'
 
     const periodText = (startDate || endDate) 
       ? `${startDate ? new Date(`${startDate}T00:00:00`).toLocaleDateString('pt-BR') : 'Início'} até ${endDate ? new Date(`${endDate}T00:00:00`).toLocaleDateString('pt-BR') : 'Hoje'}`
@@ -304,7 +320,7 @@ export default function HistoricoPage() {
             }
             .info-grid {
               display: grid;
-              grid-template-columns: repeat(4, 1fr);
+              grid-template-columns: repeat(5, 1fr);
               gap: 10px;
               background: #f8fafc;
               border: 1px solid #e2e8f0;
@@ -405,6 +421,10 @@ export default function HistoricoPage() {
               <div class="info-item">
                 <span>Cliente</span>
                 <strong>${clientSelectedName}</strong>
+              </div>
+              <div class="info-item">
+                <span>Categoria</span>
+                <strong>${categoryText}</strong>
               </div>
               <div class="info-item">
                 <span>Unidade</span>
@@ -517,7 +537,7 @@ export default function HistoricoPage() {
         <select
           value={selectedClient}
           onChange={(e) => setSelectedClient(e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
         >
           <option value="all">Todos os clientes</option>
           {clients.map((c) => (
@@ -527,11 +547,22 @@ export default function HistoricoPage() {
           ))}
         </select>
 
+        {/* Novo Filtro de Categoria (Área Comum vs Unidades) */}
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value as 'all' | 'common_area' | 'unit')}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+        >
+          <option value="all">🏢 All Types (Common Area & Units)</option>
+          <option value="common_area">🧹 Common Area Only</option>
+          <option value="unit">🔑 Units / Move-in & Move-out Only</option>
+        </select>
+
         {availableUnits.length > 0 && (
           <select
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
           >
             <option value="all">Todas as unidades</option>
             {availableUnits.map((u) => (
@@ -542,13 +573,14 @@ export default function HistoricoPage() {
           </select>
         )}
 
-        {(startDate || endDate || selectedClient !== 'all' || selectedUnit !== 'all') && (
+        {(startDate || endDate || selectedClient !== 'all' || selectedUnit !== 'all' || selectedCategory !== 'all') && (
           <button
             onClick={() => {
               setStartDate('')
               setEndDate('')
               setSelectedClient('all')
               setSelectedUnit('all')
+              setSelectedCategory('all')
             }}
             className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-800/50 hover:bg-slate-800 px-2 py-1.5 rounded-lg border border-slate-700/50 transition cursor-pointer"
           >
@@ -570,7 +602,7 @@ export default function HistoricoPage() {
         <div className="text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800">
           <Calendar className="w-10 h-10 text-slate-600 mx-auto mb-2" />
           <h3 className="font-semibold text-slate-300">Nenhuma limpeza encontrada</h3>
-          <p className="text-slate-500 text-sm mt-1">Tente outro intervalo de datas, cliente ou unidade.</p>
+          <p className="text-slate-500 text-sm mt-1">Tente outro intervalo de datas, cliente, categoria ou unidade.</p>
         </div>
       ) : (
         <div className="space-y-2">
