@@ -14,6 +14,7 @@ import {
   Copy,
   X,
   FileText,
+  Share2,
   Home
 } from 'lucide-react'
 import Link from 'next/link'
@@ -128,6 +129,7 @@ export default function HistoricoPage() {
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
@@ -226,12 +228,7 @@ export default function HistoricoPage() {
     })
   }, [jobs, startDate, endDate, selectedClient, selectedUnit, selectedCategory])
 
-  const handleGeneratePDF = () => {
-    if (filteredJobs.length === 0) {
-      alert('Nenhuma limpeza encontrada para gerar o PDF.')
-      return
-    }
-
+  const buildPdfHtml = () => {
     const totalValor = filteredJobs.reduce((acc, j) => acc + Number(j.price || 0) + Number(j.extra_price || 0), 0)
     
     let clientSelectedName = 'Todos os Clientes'
@@ -270,211 +267,110 @@ export default function HistoricoPage() {
       `
     }).join('')
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Relatório de Limpezas</title>
-          <style>
-            @page {
-              size: A4 landscape;
-              margin: 10mm;
-            }
-            * {
-              box-sizing: border-box;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-              color: #0f172a;
-              margin: 0;
-              padding: 15px;
-              background-color: #ffffff;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            .wrapper {
-              width: 100%;
-              max-width: 100%;
-              margin: 0 auto;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              border-bottom: 2px solid #059669;
-              padding-bottom: 12px;
-              margin-bottom: 15px;
-            }
-            .brand {
-              font-size: 20px;
-              font-weight: 800;
-              color: #059669;
-            }
-            .title {
-              font-size: 13px;
-              font-weight: 600;
-              color: #475569;
-              margin-top: 2px;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: repeat(5, 1fr);
-              gap: 10px;
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              border-radius: 6px;
-              padding: 10px 12px;
-              margin-bottom: 15px;
-              font-size: 11px;
-            }
-            .info-item span {
-              color: #64748b;
-              font-weight: 600;
-              display: block;
-              font-size: 9px;
-              text-transform: uppercase;
-              margin-bottom: 2px;
-            }
-            .info-item strong {
-              color: #0f172a;
-              font-size: 11px;
-              word-break: break-word;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 15px;
-              font-size: 10px;
-            }
-            th {
-              background-color: #0f172a !important;
-              color: #ffffff !important;
-              text-align: left;
-              padding: 8px;
-              font-weight: 600;
-            }
-            td {
-              padding: 7px 8px;
-              border-bottom: 1px solid #e2e8f0;
-              vertical-align: middle;
-            }
-            tr:nth-child(even) {
-              background-color: #f8fafc !important;
-            }
-            .badge {
-              padding: 2px 6px;
-              border-radius: 4px;
-              font-size: 9px;
-              font-weight: 700;
-              display: inline-block;
-            }
-            .badge-unit {
-              background: #f3e8ff !important;
-              color: #6b21a8 !important;
-              border: 1px solid #d8b4fe !important;
-            }
-            .footer-container {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-              margin-top: 15px;
-            }
-            .total-card {
-              background: #ecfdf5 !important;
-              border: 1px solid #a7f3d0 !important;
-              padding: 10px 16px;
-              border-radius: 8px;
-              text-align: right;
-              margin-left: auto;
-            }
-            .total-card span {
-              color: #047857;
-              font-size: 10px;
-              font-weight: 700;
-            }
-            .total-card h2 {
-              color: #065f46;
-              margin: 2px 0 0 0;
-              font-size: 18px;
-            }
-            .footer {
-              font-size: 9px;
-              color: #94a3b8;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="wrapper">
-            <div class="header">
-              <div>
-                <div class="brand">Relatório de Limpezas</div>
-                <div class="title">Resumo Operacional & Financeiro</div>
-              </div>
-              <div style="text-align: right; font-size: 10px; color: #64748b;">
-                Emissão: ${new Date().toLocaleDateString('pt-BR')}
-              </div>
-            </div>
-
-            <div class="info-grid">
-              <div class="info-item">
-                <span>Cliente</span>
-                <strong>${clientSelectedName}</strong>
-              </div>
-              <div class="info-item">
-                <span>Categoria</span>
-                <strong>${categoryText}</strong>
-              </div>
-              <div class="info-item">
-                <span>Unidade</span>
-                <strong>${selectedUnit !== 'all' ? selectedUnit : 'Todas'}</strong>
-              </div>
-              <div class="info-item">
-                <span>Período</span>
-                <strong>${periodText}</strong>
-              </div>
-              <div class="info-item">
-                <span>Registros</span>
-                <strong>${filteredJobs.length} limpeza(s)</strong>
-              </div>
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Data / Hora</th>
-                  <th>Cliente</th>
-                  <th>Unidade / Notas</th>
-                  <th>Serviço</th>
-                  <th>Limpador</th>
-                  <th>Status</th>
-                  <th style="text-align: right;">Valor ($)</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-              </tbody>
-            </table>
-
-            <div class="footer-container">
-              <div class="footer">
-                Relatório gerado via Gestão de Limpezas.
-              </div>
-              <div class="total-card">
-                <span>VALOR TOTAL</span>
-                <h2>$${totalValor.toFixed(2)}</h2>
-              </div>
-            </div>
+    return `
+      <style>
+        * {
+          box-sizing: border-box;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 15px;
+          font-size: 10px;
+        }
+        th {
+          background-color: #0f172a !important;
+          color: #ffffff !important;
+          text-align: left;
+          padding: 10px 8px;
+          font-weight: 600;
+        }
+        td {
+          padding: 12px 8px !important;
+          border-bottom: 1px solid #e2e8f0;
+          vertical-align: middle;
+        }
+        tr:nth-child(even) {
+          background-color: #f8fafc !important;
+        }
+        .badge {
+          display: inline-block !important;
+          padding: 5px 10px !important;
+          border-radius: 6px;
+          font-size: 9px;
+          font-weight: 700;
+          line-height: 1.4 !important;
+          vertical-align: middle;
+          white-space: nowrap;
+          box-sizing: border-box !important;
+        }
+        .badge-unit {
+          background-color: #f3e8ff !important;
+          color: #6b21a8 !important;
+          border: 1px solid #d8b4fe !important;
+        }
+      </style>
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #0f172a; background: #ffffff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 15px;">
+          <div>
+            <div style="font-size: 20px; font-weight: 800; color: #059669;">Relatório de Limpezas</div>
+            <div style="font-size: 12px; font-weight: 600; color: #475569; margin-top: 2px;">Resumo Operacional & Financeiro</div>
           </div>
-        </body>
-      </html>
+          <div style="text-align: right; font-size: 10px; color: #64748b;">
+            Emissão: ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; margin-bottom: 15px; font-size: 11px;">
+          <div><span style="color: #64748b; font-size: 9px; display: block; font-weight: bold;">CLIENTE</span><strong>${clientSelectedName}</strong></div>
+          <div><span style="color: #64748b; font-size: 9px; display: block; font-weight: bold;">CATEGORIA</span><strong>${categoryText}</strong></div>
+          <div><span style="color: #64748b; font-size: 9px; display: block; font-weight: bold;">UNIDADE</span><strong>${selectedUnit !== 'all' ? selectedUnit : 'Todas'}</strong></div>
+          <div><span style="color: #64748b; font-size: 9px; display: block; font-weight: bold;">PERÍODO</span><strong>${periodText}</strong></div>
+          <div><span style="color: #64748b; font-size: 9px; display: block; font-weight: bold;">REGISTROS</span><strong>${filteredJobs.length} limpeza(s)</strong></div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Data / Hora</th>
+              <th>Cliente</th>
+              <th>Unidade / Notas</th>
+              <th>Serviço</th>
+              <th>Limpador</th>
+              <th>Status</th>
+              <th style="text-align: right;">Valor ($)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 15px;">
+          <div style="font-size: 9px; color: #94a3b8;">Relatório gerado via Gestão de Limpezas.</div>
+          <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 10px 16px; border-radius: 8px; text-align: right;">
+            <span style="color: #047857; font-size: 10px; font-weight: 700; display: block;">VALOR TOTAL</span>
+            <h2 style="color: #065f46; margin: 2px 0 0 0; font-size: 18px;">$${totalValor.toFixed(2)}</h2>
+          </div>
+        </div>
+      </div>
     `
+  }
+
+  // Baixar PDF impresso pelo navegador
+  const handleGeneratePDF = () => {
+    if (filteredJobs.length === 0) {
+      alert('Nenhuma limpeza encontrada para gerar o PDF.')
+      return
+    }
 
     const printWindow = window.open('', '_blank')
     if (printWindow) {
       printWindow.document.open()
-      printWindow.document.write(htmlContent)
+      printWindow.document.write(`
+        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório de Limpezas</title></head>
+        <body>${buildPdfHtml()}</body></html>
+      `)
       printWindow.document.close()
 
       printWindow.onload = () => {
@@ -485,6 +381,64 @@ export default function HistoricoPage() {
       }
     } else {
       alert('Por favor, permita pop-ups para gerar o PDF no celular.')
+    }
+  }
+
+  // Partilhar PDF / Relatório via WhatsApp
+  const handleSharePDF = async () => {
+    if (filteredJobs.length === 0) {
+      alert('Nenhuma limpeza encontrada para partilhar.')
+      return
+    }
+
+    setIsGeneratingPdf(true)
+
+    try {
+      const html2pdf = (await import('html2pdf.js')).default
+      const container = document.createElement('div')
+      container.innerHTML = buildPdfHtml()
+      document.body.appendChild(container)
+
+      const fileName = `Relatorio_Limpezas_${new Date().toISOString().split('T')[0]}.pdf`
+
+      const opt = {
+        margin: 5,
+        filename: fileName,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const }
+      }
+
+      const pdfBlob = await html2pdf().set(opt).from(container).output('blob')
+      document.body.removeChild(container)
+
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' })
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: 'Relatório de Limpezas',
+            text: 'Segue o relatório de limpezas em PDF.'
+          })
+          setIsGeneratingPdf(false)
+          return
+        } catch (shareErr) {
+          console.warn('Partilha nativa cancelada ou bloqueada, executando fallback de download.', shareErr)
+        }
+      }
+
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(pdfBlob)
+      link.download = fileName
+      link.click()
+      
+      alert('O PDF foi gerado e descarregado com sucesso! Agora podes anexá-lo diretamente na conversa do WhatsApp.')
+    } catch (err) {
+      console.error('Erro ao gerar o PDF:', err)
+      alert('Ocorreu um erro ao gerar o relatório.')
+    } finally {
+      setIsGeneratingPdf(false)
     }
   }
 
@@ -502,23 +456,34 @@ export default function HistoricoPage() {
           <h1 className="text-lg sm:text-xl font-bold text-emerald-400">Histórico de Limpezas</h1>
         </div>
 
-        <button
-          onClick={handleGeneratePDF}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-xs flex items-center gap-1.5 sm:gap-2 transition cursor-pointer active:scale-95 shadow-md shrink-0"
-        >
-          <FileText className="w-4 h-4" /> <span className="hidden xs:inline">Baixar </span>PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSharePDF}
+            disabled={isGeneratingPdf}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-xs flex items-center gap-1.5 sm:gap-2 transition cursor-pointer active:scale-95 shadow-md shrink-0 disabled:opacity-50"
+          >
+            {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+            <span className="hidden xs:inline">{isGeneratingPdf ? 'Gerando...' : 'Partilhar'}</span>
+          </button>
+
+          <button
+            onClick={handleGeneratePDF}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-xs flex items-center gap-1.5 sm:gap-2 transition cursor-pointer active:scale-95 border border-slate-700 shrink-0"
+          >
+            <FileText className="w-4 h-4" /> <span className="hidden xs:inline">Baixar</span>
+          </button>
+        </div>
       </div>
 
       {/* Filtros Responsivos */}
-      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3 w-full max-w-full box-border">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3 w-full max-w-full box-border overflow-hidden">
         <div className="flex items-center gap-2 text-slate-500 font-medium text-xs">
           <Filter className="w-4 h-4 shrink-0" />
           <span className="sm:hidden text-slate-400">Filtros:</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center w-full sm:w-auto min-w-0">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full min-w-0">
             <span className="text-xs text-slate-400 shrink-0">De:</span>
             <input
               type="date"
@@ -528,7 +493,7 @@ export default function HistoricoPage() {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 w-full min-w-0">
             <span className="text-xs text-slate-400 shrink-0">Até:</span>
             <input
               type="date"
@@ -542,7 +507,7 @@ export default function HistoricoPage() {
         <select
           value={selectedClient}
           onChange={(e) => setSelectedClient(e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full max-w-full sm:w-auto min-w-0 truncate"
         >
           <option value="all">Todos os clientes</option>
           {clients.map((c) => (
@@ -552,11 +517,11 @@ export default function HistoricoPage() {
           ))}
         </select>
 
-        {/* Filtro de Categoria (Área Comum vs Unidades) */}
+        {/* Filtro de Categoria */}
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value as 'all' | 'common_area' | 'unit')}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full max-w-full sm:w-auto min-w-0 truncate"
         >
           <option value="all">🏢 All Types (Common Area & Units)</option>
           <option value="common_area">🧹 Common Area Only</option>
@@ -567,7 +532,7 @@ export default function HistoricoPage() {
           <select
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full sm:w-auto truncate"
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium w-full max-w-full sm:w-auto min-w-0 truncate"
           >
             <option value="all">Todas as unidades</option>
             {availableUnits.map((u) => (
@@ -625,9 +590,9 @@ export default function HistoricoPage() {
             return (
               <div
                 key={j.id}
-                className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 overflow-hidden"
               >
-                <div className="space-y-1.5 w-full lg:w-auto">
+                <div className="space-y-1.5 w-full lg:w-auto min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-white text-base">{client?.name ?? 'Sem cliente'}</span>
 
@@ -652,7 +617,6 @@ export default function HistoricoPage() {
                     )}
                   </div>
 
-                  {/* Badge da Unidade Simplificada */}
                   {unitName && (
                     <div className="bg-purple-950/40 border border-purple-800/40 text-purple-300 px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1.5 max-w-full">
                       <Home className="w-3 h-3 text-purple-400 shrink-0" />
