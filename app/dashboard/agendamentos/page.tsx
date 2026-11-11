@@ -74,7 +74,7 @@ interface Job {
   has_helper?: boolean
   helper_id?: string | null
   helper_payout?: number | null
-  status: 'pending' | 'in_progress' | 'completed'
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
   notes?: string
   target_type?: 'unit' | 'common_area'
   selected_common_areas?: Array<{ id: string; name: string }>
@@ -446,31 +446,28 @@ export default function CalendarPage() {
     setShowModal(true)
   }
 
-  // Função auxiliar para disparar e-mail de notificação
-  const sendEmailNotification = (
-    cleanerEmail: string,
-    cleanerName: string,
-    clientName: string,
-    unitDetailsStr: string,
-    dateStr: string,
-    timeStr: string,
-    addressStr: string,
-    payoutVal: string | number
-  ) => {
-    fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cleanerEmail,
-        cleanerName,
-        clientName,
-        unitDetails: unitDetailsStr,
-        date: dateStr,
-        time: timeStr,
-        address: addressStr,
-        payout: payoutVal
+  // Helper unificado para disparo de e-mails de notificação
+  const sendEmailNotification = async (payload: {
+    type: 'NEW_JOB' | 'UPDATE' | 'CANCELLATION'
+    cleanerEmail: string
+    cleanerName: string
+    clientName: string
+    unitDetails: string
+    date: string
+    time: string
+    address: string
+    payout: string | number
+  }) => {
+    if (!payload.cleanerEmail) return
+    try {
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-    }).catch((err) => console.error('Erro ao enviar e-mail de notificação:', err))
+    } catch (err) {
+      console.error('Erro ao enviar e-mail de notificação:', err)
+    }
   }
 
   const handleSaveJob = async (e: React.FormEvent) => {
@@ -523,6 +520,14 @@ export default function CalendarPage() {
     }
 
     try {
+      let previousJob: Job | null = null
+
+      // Se for edição, obtém o estado do agendamento antes das alterações
+      if (editingJobId) {
+        const { data } = await supabase.from('jobs').select('*').eq('id', editingJobId).single()
+        if (data) previousJob = data as Job
+      }
+
       if (editingJobId) {
         const { error } = await supabase.from('jobs').update(payload).eq('id', editingJobId)
         if (error) throw error
@@ -565,40 +570,128 @@ export default function CalendarPage() {
         }
       }
 
-      // --- DISPARO DE E-MAILS DE NOTIFICAÇÃO ---
+      // --- DISPARO DE E-MAILS DE NOTIFICAÇÃO E TROCAS ---
       const prop = clientProperties.find((p) => p.id === propertyId)
       const addressToUse = prop?.address || selectedClient?.address || 'Endereço não informado'
       const clientNameStr = selectedClient?.name || 'Cliente'
 
-      // 1. E-mail para a Limpadora Principal
-      const mainCleaner = cleaners.find((c) => c.id === cleanerId)
-      if (mainCleaner?.email) {
-        sendEmailNotification(
-          mainCleaner.email,
-          mainCleaner.name,
-          clientNameStr,
-          displayUnitStr,
-          scheduledDate,
-          scheduledTime,
-          addressToUse,
-          payout
-        )
-      }
+      const currentCleaner = cleaners.find((c) => c.id === cleanerId)
+      const currentHelper = hasHelper && helperId ? cleaners.find((c) => c.id === helperId) : null
 
-      // 2. E-mail para o Helper (se selecionado)
-      if (hasHelper && helperId) {
-        const helperCleaner = cleaners.find((c) => c.id === helperId)
-        if (helperCleaner?.email) {
-          sendEmailNotification(
-            helperCleaner.email,
-            helperCleaner.name,
-            clientNameStr,
-            displayUnitStr,
-            scheduledDate,
-            scheduledTime,
-            addressToUse,
-            helperPayout
-          )
+      if (previousJob) {
+        // A. TROCA OU MANUTENÇÃO DA LIMPADORA PRINCIPAL
+        if (previousJob.cleaner_id !== cleanerId) {
+          // Notifica cancelamento/remoção da limpadora antiga
+          if (previousJob.cleaner_id) {
+            const oldCleaner = cleaners.find((c) => c.id === previousJob?.cleaner_id)
+            if (oldCleaner?.email) {
+              await sendEmailNotification({
+                type: 'CANCELLATION',
+                cleanerEmail: oldCleaner.email,
+                cleanerName: oldCleaner.name,
+                clientName: clientNameStr,
+                unitDetails: displayUnitStr,
+                date: previousJob.scheduled_date,
+                time: previousJob.scheduled_time,
+                address: addressToUse,
+                payout: previousJob.payout || 0
+              })
+            }
+          }
+          // Notifica novo agendamento para a nova limpadora
+          if (currentCleaner?.email) {
+            await sendEmailNotification({
+              type: 'NEW_JOB',
+              cleanerEmail: currentCleaner.email,
+              cleanerName: currentCleaner.name,
+              clientName: clientNameStr,
+              unitDetails: displayUnitStr,
+              date: scheduledDate,
+              time: scheduledTime,
+              address: addressToUse,
+              payout: payout
+            })
+          }
+        } else if (currentCleaner?.email) {
+          // Mantida a mesma limpadora: envia e-mail de atualização
+          await sendEmailNotification({
+            type: 'UPDATE',
+            cleanerEmail: currentCleaner.email,
+            cleanerName: currentCleaner.name,
+            clientName: clientNameStr,
+            unitDetails: displayUnitStr,
+            date: scheduledDate,
+            time: scheduledTime,
+            address: addressToUse,
+            payout: payout
+          })
+        }
+
+        // B. TROCA OU MANUTENÇÃO DO HELPER
+        const prevHelperId = previousJob.has_helper ? previousJob.helper_id : null
+        const newHelperId = hasHelper ? helperId : null
+
+        if (prevHelperId !== newHelperId) {
+          // Notifica cancelamento para o helper antigo
+          if (prevHelperId) {
+            const oldHelper = cleaners.find((c) => c.id === prevHelperId)
+            if (oldHelper?.email) {
+              await sendEmailNotification({
+                type: 'CANCELLATION',
+                cleanerEmail: oldHelper.email,
+                cleanerName: oldHelper.name,
+                clientName: clientNameStr,
+                unitDetails: displayUnitStr,
+                date: previousJob.scheduled_date,
+                time: previousJob.scheduled_time,
+                address: addressToUse,
+                payout: previousJob.helper_payout || 0
+              })
+            }
+          }
+          // Notifica novo agendamento para o novo helper
+          if (currentHelper?.email) {
+            await sendEmailNotification({
+              type: 'NEW_JOB',
+              cleanerEmail: currentHelper.email,
+              cleanerName: currentHelper.name,
+              clientName: clientNameStr,
+              unitDetails: displayUnitStr,
+              date: scheduledDate,
+              time: scheduledTime,
+              address: addressToUse,
+              payout: helperPayout
+            })
+          }
+        }
+      } else {
+        // NOVO AGENDAMENTO DO ZERO
+        if (currentCleaner?.email) {
+          await sendEmailNotification({
+            type: 'NEW_JOB',
+            cleanerEmail: currentCleaner.email,
+            cleanerName: currentCleaner.name,
+            clientName: clientNameStr,
+            unitDetails: displayUnitStr,
+            date: scheduledDate,
+            time: scheduledTime,
+            address: addressToUse,
+            payout: payout
+          })
+        }
+
+        if (currentHelper?.email) {
+          await sendEmailNotification({
+            type: 'NEW_JOB',
+            cleanerEmail: currentHelper.email,
+            cleanerName: currentHelper.name,
+            clientName: clientNameStr,
+            unitDetails: displayUnitStr,
+            date: scheduledDate,
+            time: scheduledTime,
+            address: addressToUse,
+            payout: helperPayout
+          })
         }
       }
 
@@ -632,8 +725,52 @@ export default function CalendarPage() {
   }
 
   const handleUpdateStatus = async (jobId: string, newStatus: string) => {
+    const { data: previousJob } = await supabase.from('jobs').select('*').eq('id', jobId).single()
+
     const { error } = await supabase.from('jobs').update({ status: newStatus }).eq('id', jobId)
     if (!error) {
+      // Se alterado para cancelado, envia e-mails de cancelamento
+      if (newStatus === 'cancelled' && previousJob) {
+        const clientObj = clients.find((c) => c.id === previousJob.client_id)
+        const clientNameStr = clientObj?.name || 'Cliente'
+        const unitLabelStr = getJobUnitLabel(previousJob as Job) || ''
+        const addressStr = getJobAddress(previousJob as Job)
+
+        if (previousJob.cleaner_id) {
+          const mainCleaner = cleaners.find((c) => c.id === previousJob.cleaner_id)
+          if (mainCleaner?.email) {
+            sendEmailNotification({
+              type: 'CANCELLATION',
+              cleanerEmail: mainCleaner.email,
+              cleanerName: mainCleaner.name,
+              clientName: clientNameStr,
+              unitDetails: unitLabelStr,
+              date: previousJob.scheduled_date,
+              time: previousJob.scheduled_time,
+              address: addressStr,
+              payout: previousJob.payout || 0
+            })
+          }
+        }
+
+        if (previousJob.has_helper && previousJob.helper_id) {
+          const helperCleaner = cleaners.find((c) => c.id === previousJob.helper_id)
+          if (helperCleaner?.email) {
+            sendEmailNotification({
+              type: 'CANCELLATION',
+              cleanerEmail: helperCleaner.email,
+              cleanerName: helperCleaner.name,
+              clientName: clientNameStr,
+              unitDetails: unitLabelStr,
+              date: previousJob.scheduled_date,
+              time: previousJob.scheduled_time,
+              address: addressStr,
+              payout: previousJob.helper_payout || 0
+            })
+          }
+        }
+      }
+
       fetchData()
     } else {
       alert('Erro ao atualizar status: ' + error.message)
@@ -643,8 +780,51 @@ export default function CalendarPage() {
   const handleDeleteJob = async (jobId: string) => {
     if (!confirm('Deseja realmente excluir este agendamento?')) return
 
+    const { data: previousJob } = await supabase.from('jobs').select('*').eq('id', jobId).single()
+
     const { error } = await supabase.from('jobs').delete().eq('id', jobId)
     if (!error) {
+      if (previousJob) {
+        const clientObj = clients.find((c) => c.id === previousJob.client_id)
+        const clientNameStr = clientObj?.name || 'Cliente'
+        const unitLabelStr = getJobUnitLabel(previousJob as Job) || ''
+        const addressStr = getJobAddress(previousJob as Job)
+
+        if (previousJob.cleaner_id) {
+          const mainCleaner = cleaners.find((c) => c.id === previousJob.cleaner_id)
+          if (mainCleaner?.email) {
+            sendEmailNotification({
+              type: 'CANCELLATION',
+              cleanerEmail: mainCleaner.email,
+              cleanerName: mainCleaner.name,
+              clientName: clientNameStr,
+              unitDetails: unitLabelStr,
+              date: previousJob.scheduled_date,
+              time: previousJob.scheduled_time,
+              address: addressStr,
+              payout: previousJob.payout || 0
+            })
+          }
+        }
+
+        if (previousJob.has_helper && previousJob.helper_id) {
+          const helperCleaner = cleaners.find((c) => c.id === previousJob.helper_id)
+          if (helperCleaner?.email) {
+            sendEmailNotification({
+              type: 'CANCELLATION',
+              cleanerEmail: helperCleaner.email,
+              cleanerName: helperCleaner.name,
+              clientName: clientNameStr,
+              unitDetails: unitLabelStr,
+              date: previousJob.scheduled_date,
+              time: previousJob.scheduled_time,
+              address: addressStr,
+              payout: previousJob.helper_payout || 0
+            })
+          }
+        }
+      }
+
       fetchData()
     } else {
       alert('Erro ao excluir: ' + error.message)
@@ -970,7 +1150,7 @@ export default function CalendarPage() {
                           <div
                             key={job.id}
                             className={`p-2 rounded-lg border text-left flex flex-col gap-1 transition ${style.bg} ${
-                              job.status === 'completed' ? 'opacity-60' : ''
+                              job.status === 'completed' ? 'opacity-60' : job.status === 'cancelled' ? 'opacity-40 line-through' : ''
                             }`}
                           >
                             <div className="flex items-start justify-between gap-1">
@@ -1036,6 +1216,7 @@ export default function CalendarPage() {
                                 <option value="pending">Pendente</option>
                                 <option value="in_progress">Andamento</option>
                                 <option value="completed">Concluída</option>
+                                <option value="cancelled">Cancelada</option>
                               </select>
 
                               <div className="flex items-center gap-0.5 shrink-0">
@@ -1154,7 +1335,7 @@ export default function CalendarPage() {
                                 <span>{area.name}</span>
                               </div>
                               <span className="text-slate-400 text-[10px]">
-                                Cliente: ${area.client_price} \vert{} Repasse:${area.cleaner_price}
+                                Cliente: ${area.client_price} | Repasse: ${area.cleaner_price}
                               </span>
                             </label>
                           ))}
