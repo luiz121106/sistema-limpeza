@@ -14,7 +14,8 @@ import {
   X, 
   CheckCircle2, 
   AlertCircle,
-  UserPlus
+  UserPlus,
+  CreditCard
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -25,6 +26,8 @@ interface Cleaner {
   email: string | null
   active: boolean
   user_id: string | null
+  payment_method: string | null
+  payment_key: string | null
 }
 
 export default function LimpadoresPage() {
@@ -36,6 +39,8 @@ export default function LimpadoresPage() {
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newPhone, setNewPhone] = useState('')
+  const [newPaymentMethod, setNewPaymentMethod] = useState('Zelle')
+  const [newPaymentKey, setNewPaymentKey] = useState('')
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState('')
 
@@ -44,6 +49,8 @@ export default function LimpadoresPage() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPhone, setEditPhone] = useState('')
+  const [editPaymentMethod, setEditPaymentMethod] = useState('Zelle')
+  const [editPaymentKey, setEditPaymentKey] = useState('')
   const [editActive, setEditActive] = useState(true)
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
@@ -80,6 +87,8 @@ export default function LimpadoresPage() {
         name: newName,
         email: newEmail || null,
         phone: newPhone || null,
+        payment_method: newPaymentMethod || null,
+        payment_key: newPaymentKey || null,
         active: true,
       },
     ])
@@ -93,6 +102,8 @@ export default function LimpadoresPage() {
     setNewName('')
     setNewEmail('')
     setNewPhone('')
+    setNewPaymentMethod('Zelle')
+    setNewPaymentKey('')
     setIsAddModalOpen(false)
     setAddLoading(false)
     fetchCleaners()
@@ -104,6 +115,8 @@ export default function LimpadoresPage() {
     setEditName(cleaner.name)
     setEditEmail(cleaner.email || '')
     setEditPhone(cleaner.phone || '')
+    setEditPaymentMethod(cleaner.payment_method || 'Zelle')
+    setEditPaymentKey(cleaner.payment_key || '')
     setEditActive(cleaner.active)
     setEditError('')
   }
@@ -122,6 +135,8 @@ export default function LimpadoresPage() {
         name: editName,
         email: editEmail || null,
         phone: editPhone || null,
+        payment_method: editPaymentMethod || null,
+        payment_key: editPaymentKey || null,
         active: editActive,
       })
       .eq('id', editingCleaner.id)
@@ -137,7 +152,7 @@ export default function LimpadoresPage() {
     fetchCleaners()
   }
 
-  // Excluir Limpador (CORRIGIDO: Supabase direto)
+  // Excluir Limpador
   const handleDeleteCleaner = async (cleanerId: string) => {
     if (!confirm('Deseja realmente excluir este limpador?')) return
 
@@ -275,6 +290,19 @@ export default function LimpadoresPage() {
                     </p>
                   )}
                 </div>
+
+                {/* Bloco de Dados de Pagamento */}
+                <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl space-y-1 text-xs">
+                  <div className="flex items-center gap-1.5 text-slate-400 font-semibold text-[11px]">
+                    <CreditCard className="w-3.5 h-3.5 text-cyan-400" /> Dados de Pagamento
+                  </div>
+                  <div className="flex items-center justify-between text-slate-200">
+                    <span className="text-slate-400">{cleaner.payment_method || 'Não inf.'}:</span>
+                    <span className="font-mono text-cyan-300 font-bold bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                      {cleaner.payment_key || 'Chave não cadastrada'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Ações do Card */}
@@ -376,6 +404,37 @@ export default function LimpadoresPage() {
                 />
               </div>
 
+              {/* Campos de Pagamento (Método + Chave) */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Método Pagamento</label>
+                  <select
+                    value={newPaymentMethod}
+                    onChange={(e) => setNewPaymentMethod(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Zelle">Zelle</option>
+                    <option value="Venmo">Venmo</option>
+                    <option value="Cash App">Cash App</option>
+                    <option value="PayPal">PayPal</option>
+                    <option value="Direct Deposit">Direct Deposit</option>
+                    <option value="Pix">Pix</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Chave / Conta</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: e-mail ou nº"
+                    value={newPaymentKey}
+                    onChange={(e) => setNewPaymentKey(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -454,6 +513,37 @@ export default function LimpadoresPage() {
                   onChange={(e) => setEditPhone(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                 />
+              </div>
+
+              {/* Campos de Pagamento na Edição */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Método Pagamento</label>
+                  <select
+                    value={editPaymentMethod}
+                    onChange={(e) => setEditPaymentMethod(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Zelle">Zelle</option>
+                    <option value="Venmo">Venmo</option>
+                    <option value="Cash App">Cash App</option>
+                    <option value="PayPal">PayPal</option>
+                    <option value="Direct Deposit">Direct Deposit</option>
+                    <option value="Pix">Pix</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Chave / Conta</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: e-mail ou nº"
+                    value={editPaymentKey}
+                    onChange={(e) => setEditPaymentKey(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
