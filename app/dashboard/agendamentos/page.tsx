@@ -17,7 +17,8 @@ import {
   Edit,
   Trash2,
   Copy,
-  Repeat
+  Repeat,
+  UserPlus
 } from 'lucide-react'
 
 // Helper para formatar objetos Date em YYYY-MM-DD considerando o fuso local
@@ -70,6 +71,9 @@ interface Job {
   extra_price?: number
   payout?: number
   extra_payout?: number
+  has_helper?: boolean
+  helper_id?: string | null
+  helper_payout?: number | null
   status: 'pending' | 'in_progress' | 'completed'
   notes?: string
   target_type?: 'unit' | 'common_area'
@@ -77,6 +81,7 @@ interface Job {
   unit_details?: string
   clients?: Client
   cleaners?: Cleaner
+  helper_cleaner?: Cleaner
 }
 
 interface CalendarDay {
@@ -158,6 +163,12 @@ export default function CalendarPage() {
   const [clientProperties, setClientProperties] = useState<Property[]>([])
   const [unitDetails, setUnitDetails] = useState('')
   const [cleanerId, setCleanerId] = useState('')
+  
+  // Campos de Helper
+  const [hasHelper, setHasHelper] = useState(false)
+  const [helperId, setHelperId] = useState('')
+  const [helperPayout, setHelperPayout] = useState('0')
+
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('09:00')
   const [serviceType, setServiceType] = useState('Regular Cleaning')
@@ -186,7 +197,7 @@ export default function CalendarPage() {
       const [jobsRes, clientsRes, cleanersRes, propertiesRes] = await Promise.all([
         supabase
           .from('jobs')
-          .select('*, clients(*), cleaners(*)')
+          .select('*')
           .order('scheduled_date', { ascending: true })
           .order('scheduled_time', { ascending: true }),
         supabase.from('clients').select('*').order('name'),
@@ -194,9 +205,22 @@ export default function CalendarPage() {
         supabase.from('properties').select('*')
       ])
 
-      if (jobsRes.data) setJobs(jobsRes.data as Job[])
-      if (clientsRes.data) setClients(clientsRes.data)
-      if (cleanersRes.data) setCleaners(cleanersRes.data)
+      const clientsList = (clientsRes.data as Client[]) || []
+      const cleanersList = (cleanersRes.data as Cleaner[]) || []
+
+      const clientsById = new Map(clientsList.map((c) => [c.id, c]))
+      const cleanersById = new Map(cleanersList.map((c) => [c.id, c]))
+
+      const formattedJobs = (jobsRes.data || []).map((job: any) => ({
+        ...job,
+        clients: job.client_id ? clientsById.get(job.client_id) || { name: 'Cliente Removido' } : { name: 'Sem Cliente' },
+        cleaners: job.cleaner_id ? cleanersById.get(job.cleaner_id) : null,
+        helper_cleaner: job.helper_id ? cleanersById.get(job.helper_id) : null
+      }))
+
+      setJobs(formattedJobs as Job[])
+      setClients(clientsList)
+      setCleaners(cleanersList)
       if (propertiesRes.data) setAllProperties(propertiesRes.data as Property[])
     } catch (err) {
       console.error('Erro ao buscar dados:', err)
@@ -341,6 +365,9 @@ export default function CalendarPage() {
     setPropertyId('')
     setUnitDetails('')
     setCleanerId('')
+    setHasHelper(false)
+    setHelperId('')
+    setHelperPayout('0')
     setScheduledDate(initialDate || formatLocalDate(new Date()))
     setScheduledTime('09:00')
     setServiceType('Regular Cleaning')
@@ -404,6 +431,9 @@ export default function CalendarPage() {
     }
 
     setCleanerId(job.cleaner_id || '')
+    setHasHelper(!!job.has_helper)
+    setHelperId(job.helper_id || '')
+    setHelperPayout(job.helper_payout ? String(job.helper_payout) : '0')
     setScheduledDate(job.scheduled_date || '')
     setScheduledTime(job.scheduled_time || '09:00')
     setServiceType(job.service_type || 'Regular Cleaning')
@@ -414,6 +444,33 @@ export default function CalendarPage() {
     setNotes(cleanNotes)
     setIsRecurring(false)
     setShowModal(true)
+  }
+
+  // Função auxiliar para disparar e-mail de notificação
+  const sendEmailNotification = (
+    cleanerEmail: string,
+    cleanerName: string,
+    clientName: string,
+    unitDetailsStr: string,
+    dateStr: string,
+    timeStr: string,
+    addressStr: string,
+    payoutVal: string | number
+  ) => {
+    fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cleanerEmail,
+        cleanerName,
+        clientName,
+        unitDetails: unitDetailsStr,
+        date: dateStr,
+        time: timeStr,
+        address: addressStr,
+        payout: payoutVal
+      })
+    }).catch((err) => console.error('Erro ao enviar e-mail de notificação:', err))
   }
 
   const handleSaveJob = async (e: React.FormEvent) => {
@@ -451,6 +508,9 @@ export default function CalendarPage() {
       client_id: clientId,
       property_id: propertyId || null,
       cleaner_id: cleanerId || null,
+      has_helper: hasHelper,
+      helper_id: hasHelper && helperId ? helperId : null,
+      helper_payout: hasHelper ? parseFloat(helperPayout) || 0 : 0,
       scheduled_date: scheduledDate,
       scheduled_time: scheduledTime,
       service_type: serviceType,
@@ -505,6 +565,43 @@ export default function CalendarPage() {
         }
       }
 
+      // --- DISPARO DE E-MAILS DE NOTIFICAÇÃO ---
+      const prop = clientProperties.find((p) => p.id === propertyId)
+      const addressToUse = prop?.address || selectedClient?.address || 'Endereço não informado'
+      const clientNameStr = selectedClient?.name || 'Cliente'
+
+      // 1. E-mail para a Limpadora Principal
+      const mainCleaner = cleaners.find((c) => c.id === cleanerId)
+      if (mainCleaner?.email) {
+        sendEmailNotification(
+          mainCleaner.email,
+          mainCleaner.name,
+          clientNameStr,
+          displayUnitStr,
+          scheduledDate,
+          scheduledTime,
+          addressToUse,
+          payout
+        )
+      }
+
+      // 2. E-mail para o Helper (se selecionado)
+      if (hasHelper && helperId) {
+        const helperCleaner = cleaners.find((c) => c.id === helperId)
+        if (helperCleaner?.email) {
+          sendEmailNotification(
+            helperCleaner.email,
+            helperCleaner.name,
+            clientNameStr,
+            displayUnitStr,
+            scheduledDate,
+            scheduledTime,
+            addressToUse,
+            helperPayout
+          )
+        }
+      }
+
       setShowModal(false)
       fetchData()
     } catch (err: unknown) {
@@ -519,7 +616,7 @@ export default function CalendarPage() {
     const newDate = prompt('Digite a nova data para a cópia (AAAA-MM-DD):', job.scheduled_date)
     if (!newDate) return
 
-    const { id, clients, cleaners, ...copyData } = job
+    const { id, clients, cleaners, helper_cleaner, ...copyData } = job
     const payload = {
       ...copyData,
       scheduled_date: newDate,
@@ -865,6 +962,7 @@ export default function CalendarPage() {
                         const style = SERVICE_TYPE_STYLES[job.service_type] || SERVICE_TYPE_STYLES['Regular Cleaning']
                         const totalPrice = Number(job.price || 0) + Number(job.extra_price || 0)
                         const assignedCleaner = job.cleaners?.name || job.cleaner_name
+                        const helperName = job.helper_cleaner?.name
                         const unitLabel = getJobUnitLabel(job)
                         const jobAddress = getJobAddress(job)
 
@@ -903,6 +1001,12 @@ export default function CalendarPage() {
                             {assignedCleaner && (
                               <p className="text-[10px] text-emerald-300 truncate flex items-center gap-1">
                                 <UserCheck className="w-2.5 h-2.5 shrink-0" /> {assignedCleaner}
+                              </p>
+                            )}
+
+                            {job.has_helper && helperName && (
+                              <p className="text-[10px] text-cyan-300 truncate flex items-center gap-1 bg-cyan-950/40 px-1 py-0.5 rounded border border-cyan-800/40">
+                                <UserPlus className="w-2.5 h-2.5 shrink-0 text-cyan-400" /> Helper: {helperName} (${job.helper_payout})
                               </p>
                             )}
 
@@ -1098,7 +1202,7 @@ export default function CalendarPage() {
               )}
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Selecione o(a) Limpador(a) / Responsável</label>
+                <label className="block text-xs text-slate-400 mb-1">Selecione o(a) Limpador(a) Principal</label>
                 <select
                   value={cleanerId}
                   onChange={(e) => setCleanerId(e.target.value)}
@@ -1109,6 +1213,54 @@ export default function CalendarPage() {
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* CAMPO DE HELPER (CHECKBOX + SELEÇÃO + REPASSE) */}
+              <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-700 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-cyan-400">
+                  <input
+                    type="checkbox"
+                    checked={hasHelper}
+                    onChange={(e) => setHasHelper(e.target.checked)}
+                    className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
+                  />
+                  <UserPlus className="w-4 h-4" />
+                  Incluir Helper (Ajudante) neste agendamento
+                </label>
+
+                {hasHelper && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Selecione o(a) Helper *</label>
+                      <select
+                        required={hasHelper}
+                        value={helperId}
+                        onChange={(e) => setHelperId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="">Escolher Helper...</option>
+                        {cleaners
+                          .filter((c) => c.id !== cleanerId)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Repasse Helper ($) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required={hasHelper}
+                        value={helperPayout}
+                        onChange={(e) => setHelperPayout(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-cyan-300 font-bold focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

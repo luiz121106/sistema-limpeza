@@ -9,6 +9,8 @@ interface JobDetail {
   clientName: string
   unitLabel: string | null
   payout: number
+  isHelper: boolean
+  roleLabel?: string
 }
 
 interface CleanerRepasse {
@@ -37,9 +39,15 @@ function getJobUnitLabel(item: any) {
 
 export default function FinanceiroLimpadoresPage() {
   const now = new Date()
-  const [year, setYear] = useState<number>(now.getFullYear())
-  const [month, setMonth] = useState<number>(now.getMonth() + 1)
-  const [fortnight, setFortnight] = useState<number>(now.getDate() <= 15 ? 1 : 2)
+  const yearStr = now.getFullYear()
+  const monthStr = String(now.getMonth() + 1).padStart(2, '0')
+
+  // Intervalo livre de datas (padrão: do dia 1º ao último dia do mês atual)
+  const [startDate, setStartDate] = useState<string>(`${yearStr}-${monthStr}-01`)
+  const [endDate, setEndDate] = useState<string>(() => {
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    return `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`
+  })
 
   const [relatorio, setRelatorio] = useState<CleanerRepasse[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,100 +59,135 @@ export default function FinanceiroLimpadoresPage() {
   const [isSharing, setIsSharing] = useState(false)
 
   useEffect(() => {
-    carregarFinanceiroQuinzenal()
-  }, [year, month, fortnight])
+    carregarFinanceiroPorPeriodo()
+  }, [startDate, endDate])
 
   const toggleExpand = (cleanerId: string) => {
     setExpandedCleanerId((prev) => (prev === cleanerId ? null : cleanerId))
   }
 
-  async function carregarFinanceiroQuinzenal() {
+  async function carregarFinanceiroPorPeriodo() {
     setLoading(true)
 
-    const monthFormatted = String(month).padStart(2, '0')
-    let startDate = ''
-    let endDate = ''
+    const sDate = startDate <= endDate ? startDate : endDate
+    const eDate = startDate <= endDate ? endDate : startDate
 
-    if (fortnight === 1) {
-      startDate = `${year}-${monthFormatted}-01`
-      endDate = `${year}-${monthFormatted}-15`
-    } else {
-      const lastDay = new Date(year, month, 0).getDate()
-      startDate = `${year}-${monthFormatted}-16`
-      endDate = `${year}-${monthFormatted}-${lastDay}`
-    }
+    try {
+      // Busca limpa em paralelo para evitar erros de Foreign Key no Supabase
+      const [jobsRes, cleanersRes, clientsRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select('*')
+          .gte('scheduled_date', sDate)
+          .lte('scheduled_date', eDate)
+          .order('scheduled_date', { ascending: true }),
+        supabase.from('cleaners').select('id, name, email'),
+        supabase.from('clients').select('id, name, cleaner_payout')
+      ])
 
-    const { data: agendamentos, error } = await supabase
-      .from('jobs')
-      .select(`
-        id,
-        payout,
-        extra_payout,
-        scheduled_date,
-        cleaner_id,
-        unit_details,
-        notes,
-        target_type,
-        cleaners ( id, name, email ),
-        clients ( name, cleaner_payout )
-      `)
-      .gte('scheduled_date', startDate)
-      .lte('scheduled_date', endDate)
-      .order('scheduled_date', { ascending: true })
+      if (jobsRes.error) throw jobsRes.error
+      if (cleanersRes.error) throw cleanersRes.error
 
-    if (error) {
-      console.error('Erro ao carregar repasses quinzenais:', error)
-      setLoading(false)
-      return
-    }
+      const cleanersList = cleanersRes.data || []
+      const clientsList = clientsRes.data || []
 
-    const agrupado = (agendamentos || []).reduce((acc: Record<string, CleanerRepasse>, item: any) => {
-      // Ignora registros sem cleaner_id ou sem o objeto de limpadora preenchido
-      if (!item.cleaner_id || !item.cleaners?.name) {
-        return acc
-      }
+      const cleanersById = new Map(cleanersList.map((c) => [c.id, c]))
+      const clientsById = new Map(clientsList.map((cl) => [cl.id, cl]))
 
-      const cleanerId = item.cleaner_id
-      const cleanerName = item.cleaners.name
-      const cleanerEmail = item.cleaners.email || '-'
+      const agrupado: Record<string, CleanerRepasse> = {}
 
-      const basePayout = Number(item.payout) || Number(item.clients?.cleaner_payout) || 0
-      const extraPayout = Number(item.extra_payout) || 0
-      const totalJobPayout = basePayout + extraPayout
-
-      if (!acc[cleanerId]) {
-        acc[cleanerId] = {
-          cleanerId,
-          cleanerName,
-          cleanerEmail,
-          totalServicos: 0,
-          totalPayout: 0,
-          servicos: [],
+      const initializeCleaner = (id: string, name: string, email: string) => {
+        if (!agrupado[id]) {
+          agrupado[id] = {
+            cleanerId: id,
+            cleanerName: name,
+            cleanerEmail: email || '-',
+            totalServicos: 0,
+            totalPayout: 0,
+            servicos: [],
+          }
         }
       }
 
-      acc[cleanerId].totalServicos += 1
-      acc[cleanerId].totalPayout += totalJobPayout
-      acc[cleanerId].servicos.push({
-        id: item.id,
-        date: item.scheduled_date,
-        clientName: item.clients?.name || 'Cliente sem nome',
-        unitLabel: getJobUnitLabel(item),
-        payout: totalJobPayout,
+      (jobsRes.data || []).forEach((item: any) => {
+        const unitLabel = getJobUnitLabel(item)
+        const clientObj = clientsById.get(item.client_id)
+        const clientName = clientObj?.name || 'Cliente sem nome'
+
+        // A. Processa Limpadora Principal
+        if (item.cleaner_id) {
+          const mainCleaner = cleanersById.get(item.cleaner_id)
+          if (mainCleaner) {
+            const cId = mainCleaner.id
+            const cName = mainCleaner.name
+            const cEmail = mainCleaner.email || '-'
+
+            const basePayout = Number(item.payout) || Number(clientObj?.cleaner_payout) || 0
+            const extraPayout = Number(item.extra_payout) || 0
+            const totalMainPayout = basePayout + extraPayout
+
+            initializeCleaner(cId, cName, cEmail)
+
+            agrupado[cId].totalServicos += 1
+            agrupado[cId].totalPayout += totalMainPayout
+            agrupado[cId].servicos.push({
+              id: `${item.id}-main`,
+              date: item.scheduled_date,
+              clientName: clientName,
+              unitLabel: unitLabel,
+              payout: totalMainPayout,
+              isHelper: false,
+              roleLabel: 'Limpeza Principal'
+            })
+          }
+        }
+
+        // B. Processa Helper (se houver)
+        if (item.has_helper && item.helper_id) {
+          const helperCleaner = cleanersById.get(item.helper_id)
+          if (helperCleaner) {
+            const hId = helperCleaner.id
+            const hName = helperCleaner.name
+            const hEmail = helperCleaner.email || '-'
+            const hPayout = Number(item.helper_payout) || 0
+
+            initializeCleaner(hId, hName, hEmail)
+
+            agrupado[hId].totalServicos += 1
+            agrupado[hId].totalPayout += hPayout
+            agrupado[hId].servicos.push({
+              id: `${item.id}-helper`,
+              date: item.scheduled_date,
+              clientName: clientName,
+              unitLabel: unitLabel,
+              payout: hPayout,
+              isHelper: true,
+              roleLabel: 'Ajudante (Helper)'
+            })
+          }
+        }
       })
 
-      return acc
-    }, {})
+      const lista = Object.values(agrupado) as CleanerRepasse[]
+      const somaTotal = lista.reduce((sum: number, item: CleanerRepasse) => sum + item.totalPayout, 0)
 
-    const lista = Object.values(agrupado) as CleanerRepasse[]
-    const somaTotal = lista.reduce((sum: number, item: CleanerRepasse) => sum + item.totalPayout, 0)
-
-    setRelatorio(lista)
-    setTotalGeral(somaTotal)
-    setLoading(false)
+      setRelatorio(lista)
+      setTotalGeral(somaTotal)
+    } catch (error) {
+      console.error('Erro ao carregar repasses do período:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Função para compartilhar o PDF pelo WhatsApp (HTML com cores HEX sem colisão lab/oklch)
+  // Formata datas para o cabeçalho do holerite / PDF
+  const formatDateBR = (dateStr: string) => {
+    if (!dateStr) return ''
+    const [y, m, d] = dateStr.split('-')
+    return `${d}/${m}/${y}`
+  }
+
+  // Função para compartilhar o PDF pelo WhatsApp
   const handleShareWhatsAppPDF = async () => {
     if (!pdfCleaner) return
     setIsSharing(true)
@@ -153,14 +196,17 @@ export default function FinanceiroLimpadoresPage() {
       // @ts-ignore
       const html2pdf = (await import('html2pdf.js')).default
 
-      const fileName = `Holerite_${pdfCleaner.cleanerName.replace(/\s+/g, '_')}_${year}_Q${fortnight}.pdf`
+      const fileName = `Holerite_${pdfCleaner.cleanerName.replace(/\s+/g, '_')}_${startDate}_a_${endDate}.pdf`
 
       const rows = pdfCleaner.servicos.map(svc => `
         <tr style="border-bottom: 1px solid #e2e8f0;">
           <td style="padding: 8px 4px;">${new Date(`${svc.date}T00:00:00`).toLocaleDateString('pt-BR')}</td>
           <td style="padding: 8px 4px;">
             <strong style="color: #0f172a; display: block;">${svc.clientName}</strong>
-            ${svc.unitLabel ? `<span style="color: #7e22ce; font-size: 10px; font-weight: bold;">${svc.unitLabel}</span>` : ''}
+            <div style="display: flex; gap: 4px; align-items: center; margin-top: 2px;">
+              ${svc.unitLabel ? `<span style="color: #7e22ce; font-size: 10px; font-weight: bold; background-color: #f3e8ff; padding: 1px 4px; border-radius: 3px;">${svc.unitLabel}</span>` : ''}
+              ${svc.isHelper ? `<span style="color: #0284c7; font-size: 9px; font-weight: bold; background-color: #e0f2fe; padding: 1px 4px; border-radius: 3px;">🤝 Helper</span>` : ''}
+            </div>
           </td>
           <td style="padding: 8px 4px; text-align: right; font-weight: bold; color: #0f172a;">$${svc.payout.toFixed(2)}</td>
         </tr>
@@ -177,9 +223,8 @@ export default function FinanceiroLimpadoresPage() {
             <div style="text-align: right;">
               <span style="font-size: 9px; font-weight: bold; color: #94a3b8; text-transform: uppercase; display: block;">PERÍODO</span>
               <span style="font-size: 11px; font-weight: bold; color: #334155; display: block;">
-                ${fortnight === 1 ? '1ª Quinzena (01 a 15)' : '2ª Quinzena (16 ao fim)'}
+                ${formatDateBR(startDate)} até ${formatDateBR(endDate)}
               </span>
-              <span style="font-size: 11px; color: #64748b;">${nomeMesAtual} / ${year}</span>
             </div>
           </div>
 
@@ -222,19 +267,16 @@ export default function FinanceiroLimpadoresPage() {
         jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
       }
 
-      // Gera o Blob do PDF
       const pdfBlob = await html2pdf().set(opt).from(element).output('blob')
       const file = new File([pdfBlob], fileName, { type: 'application/pdf' })
 
-      // Tenta a Web Share API (celulares/tablets)
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: `Holerite - ${pdfCleaner.cleanerName}`,
-          text: `Olá ${pdfCleaner.cleanerName}, segue em anexo o teu comprovativo de repasse referente a ${fortnight}ª quinzena de ${nomeMesAtual}/${year}.`
+          text: `Olá ${pdfCleaner.cleanerName}, segue em anexo o teu comprovativo de repasse referente ao período de ${formatDateBR(startDate)} a ${formatDateBR(endDate)}.`
         })
       } else {
-        // Fallback para Desktop: descarrega o arquivo e abre o WhatsApp Web
         const url = URL.createObjectURL(pdfBlob)
         const a = document.createElement('a')
         a.href = url
@@ -252,26 +294,8 @@ export default function FinanceiroLimpadoresPage() {
     }
   }
 
-  const meses = [
-    { value: 1, label: 'Janeiro' },
-    { value: 2, label: 'Fevereiro' },
-    { value: 3, label: 'Março' },
-    { value: 4, label: 'Abril' },
-    { value: 5, label: 'Maio' },
-    { value: 6, label: 'Junho' },
-    { value: 7, label: 'Julho' },
-    { value: 8, label: 'Agosto' },
-    { value: 9, label: 'Setembro' },
-    { value: 10, label: 'Outubro' },
-    { value: 11, label: 'Novembro' },
-    { value: 12, label: 'Dezembro' },
-  ]
-
-  const nomeMesAtual = meses.find((m) => m.value === month)?.label
-
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      {/* Estilos específicos para impressão */}
       <style jsx global>{`
         @media print {
           body * {
@@ -293,55 +317,42 @@ export default function FinanceiroLimpadoresPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Fechamento das Limpadoras</h1>
-          <p className="text-gray-500 text-sm">Cálculo quinzenal de repasses e serviços</p>
+          <p className="text-gray-500 text-sm">Cálculo de repasses por período personalizado (Inclui Helpers)</p>
         </div>
 
-        <div className="flex flex-wrap gap-2 bg-white p-2 rounded-lg border border-gray-200 shadow-xs">
-          <select
-            value={fortnight}
-            onChange={(e) => setFortnight(Number(e.target.value))}
-            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value={1}>1ª Quinzena (01 a 15)</option>
-            <option value={2}>2ª Quinzena (16 ao fim do mês)</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-3 bg-white p-2.5 rounded-xl border border-gray-200 shadow-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-gray-500">De:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
 
-          <select
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-          >
-            {meses.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="border border-gray-300 rounded-sm px-3 py-1.5 text-sm bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-          >
-            {[2024, 2025, 2026, 2027].map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-gray-500">Até:</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white font-medium text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
         </div>
       </div>
 
       <div className="bg-linear-to-r from-emerald-600 to-teal-700 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <span className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">
-            Total gasto com repasses nesta quinzena
+            Total gasto com repasses neste período
           </span>
           <h2 className="text-4xl font-extrabold mt-1">
             ${totalGeral.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </h2>
           <p className="text-emerald-100 text-xs mt-1">
-            Período: {fortnight === 1 ? '01 a 15' : '16 ao fim'} de {nomeMesAtual} / {year}
+            Período: {formatDateBR(startDate)} até {formatDateBR(endDate)}
           </p>
         </div>
 
@@ -359,11 +370,11 @@ export default function FinanceiroLimpadoresPage() {
 
         {loading ? (
           <div className="p-12 text-center text-gray-500 animate-pulse">
-            Carregando fechamento quinzenal...
+            Carregando fechamento do período...
           </div>
         ) : relatorio.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
-            Nenhum serviço realizado na {fortnight}ª quinzena de {nomeMesAtual}.
+            Nenhum serviço realizado no período de {formatDateBR(startDate)} a {formatDateBR(endDate)}.
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
@@ -372,7 +383,6 @@ export default function FinanceiroLimpadoresPage() {
 
               return (
                 <div key={item.cleanerId} className="flex flex-col">
-                  {/* Item do Cabeçalho */}
                   <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition">
                     <div className="space-y-1">
                       <h4 className="font-bold text-gray-800 text-lg">{item.cleanerName}</h4>
@@ -380,7 +390,7 @@ export default function FinanceiroLimpadoresPage() {
 
                       <div className="flex items-center gap-3 pt-1">
                         <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-medium">
-                          {item.totalServicos} {item.totalServicos === 1 ? 'serviço realizado' : 'serviços realizados'}
+                          {item.totalServicos} {item.totalServicos === 1 ? 'trabalho realizado' : 'trabalhos realizados'}
                         </span>
 
                         <button
@@ -395,13 +405,12 @@ export default function FinanceiroLimpadoresPage() {
 
                     <div className="flex items-center gap-4">
                       <div className="text-left sm:text-right">
-                        <span className="text-xs text-gray-500 block font-medium">Total a pagar nesta quinzena</span>
+                        <span className="text-xs text-gray-500 block font-medium">Total a pagar neste período</span>
                         <span className="text-3xl font-extrabold text-emerald-600">
                           ${item.totalPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
 
-                      {/* BOTÃO GERAR PDF */}
                       <button
                         type="button"
                         onClick={() => setPdfCleaner(item)}
@@ -416,7 +425,7 @@ export default function FinanceiroLimpadoresPage() {
                   {isExpanded && (
                     <div className="bg-slate-50 p-4 border-t border-gray-100 divide-y divide-gray-200/80">
                       <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-                        Detalhamento das Limpezas:
+                        Detalhamento dos Serviços:
                       </p>
                       {item.servicos.map((svc) => (
                         <div key={svc.id} className="py-2.5 flex items-center justify-between text-xs">
@@ -426,6 +435,11 @@ export default function FinanceiroLimpadoresPage() {
                               {svc.unitLabel && (
                                 <span className="bg-purple-700 text-white border border-purple-800 px-2.5 py-0.5 rounded-md font-bold text-[11px] shadow-xs">
                                   {svc.unitLabel}
+                                </span>
+                              )}
+                              {svc.isHelper && (
+                                <span className="bg-sky-100 text-sky-800 border border-sky-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                                  🤝 Helper
                                 </span>
                               )}
                             </div>
@@ -491,10 +505,7 @@ export default function FinanceiroLimpadoresPage() {
                 <div className="text-right">
                   <span className="text-[10px] font-bold text-gray-400 block uppercase">PERÍODO</span>
                   <span className="text-xs font-bold text-gray-700 block">
-                    {fortnight === 1 ? '1ª Quinzena (01 a 15)' : '2ª Quinzena (16 ao fim)'}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {nomeMesAtual} / {year}
+                    {formatDateBR(startDate)} até {formatDateBR(endDate)}
                   </span>
                 </div>
               </div>
@@ -521,11 +532,18 @@ export default function FinanceiroLimpadoresPage() {
                       </td>
                       <td className="py-2.5">
                         <span className="font-bold block text-gray-900">{svc.clientName}</span>
-                        {svc.unitLabel && (
-                          <span className="text-[10px] text-purple-700 font-semibold">
-                            {svc.unitLabel}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          {svc.unitLabel && (
+                            <span className="text-[10px] text-purple-700 font-semibold">
+                              {svc.unitLabel}
+                            </span>
+                          )}
+                          {svc.isHelper && (
+                            <span className="text-[9px] text-sky-700 bg-sky-50 px-1 rounded font-bold border border-sky-200">
+                              🤝 Helper
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 text-right font-bold text-gray-900">
                         ${svc.payout.toFixed(2)}
