@@ -70,7 +70,7 @@ export async function POST(request: Request) {
             ${formattedPayout ? `<p style="margin: 5px 0;"><strong>💵 Valor de Serviço:</strong> ${formattedPayout}</p>` : ''}
           </div>
 
-          <p style="font-size: 13px; color: #6b7280;">Por favor, certifique-se de chegar ao local no horário combinado.</p>
+        
         </div>
       `,
     })
