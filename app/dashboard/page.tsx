@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet, Globe } from 'lucide-react'
+import { LogOut, Calendar, Users, DollarSign, Clock, UserPlus, UserCheck, Wallet, Globe, Camera } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DashboardPage() {
@@ -24,21 +24,27 @@ export default function DashboardPage() {
         const { data: { session }, error: authError } = await supabase.auth.getSession()
 
         if (authError || !session || !session.user) {
-          router.replace('/limpador/login')
+          window.location.replace('/limpador/login')
+          return
+        }
+
+        // 2. Bloqueia acesso ao Dashboard se o nível de acesso for 'cleaner'
+        if (session.user.user_metadata?.role === 'cleaner') {
+          window.location.replace('/limpador')
           return
         }
 
         setUser(session.user)
 
-        // 2. Total de clientes
+        // 3. Total de clientes
         const { count: clients } = await supabase.from('clients').select('*', { count: 'exact', head: true })
         setClientCount(clients || 0)
 
-        // 3. Total de limpadores ativos
+        // 4. Total de limpadores ativos
         const { count: cleaners } = await supabase.from('cleaners').select('*', { count: 'exact', head: true }).eq('active', true)
         setCleanerCount(cleaners || 0)
 
-        // 4. Limpezas hoje (Ajustado para o fuso horário local do dispositivo)
+        // 5. Limpezas hoje (Ajustado para o fuso horário local do dispositivo)
         const now = new Date()
         const year = now.getFullYear()
         const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -51,7 +57,7 @@ export default function DashboardPage() {
           .eq('scheduled_date', today)
         setTodayJobsCount(todayJobs || 0)
 
-        // 5. Faturamento Mensal (Reseta no 1º dia de cada mês)
+        // 6. Faturamento Mensal (Reseta no 1º dia de cada mês)
         const firstDayOfMonth = `${year}-${month}-01`
 
         const { data: completedJobs } = await supabase
@@ -72,16 +78,16 @@ export default function DashboardPage() {
         setLoading(false)
       } catch (err) {
         console.error('Erro ao carregar o dashboard:', err)
-        router.replace('/limpador/login')
+        window.location.replace('/limpador/login')
       }
     }
 
     initDashboard()
 
     // Monitoriza alterações no estado de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
-        router.replace('/limpador/login')
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        window.location.replace('/limpador/login')
       }
     })
 
@@ -91,8 +97,11 @@ export default function DashboardPage() {
   }, [router])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.replace('/limpador/login')
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      window.location.replace('/limpador/login')
+    }
   }
 
   if (loading) {
@@ -210,6 +219,19 @@ export default function DashboardPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-slate-200 group-hover:text-blue-400 transition">Agendamentos</h3>
                 <p className="text-xs text-slate-400 mt-1">Organizar a escala e atrelar limpadores.</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/dashboard/photos"
+              className="p-4 bg-slate-900/60 hover:bg-slate-900 rounded-xl border border-slate-700/80 flex items-start gap-3 transition group h-full"
+            >
+              <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg group-hover:scale-105 transition shrink-0">
+                <Camera className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-200 group-hover:text-amber-400 transition">Fotos das Limpezas</h3>
+                <p className="text-xs text-slate-400 mt-1">Galeria de Antes e Depois por dia, unidade e limpadora.</p>
               </div>
             </Link>
 

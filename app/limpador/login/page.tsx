@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Lock, Mail, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -19,7 +17,7 @@ export default function LoginPage() {
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       })
 
@@ -30,7 +28,13 @@ export default function LoginPage() {
       }
 
       if (data.session) {
-        router.replace('/dashboard')
+        const role = data.session.user.user_metadata?.role
+
+        if (role === 'cleaner') {
+          window.location.replace('/limpador')
+        } else {
+          window.location.replace('/dashboard')
+        }
       }
     } catch (err) {
       setErrorMsg('Ocorreu um erro ao tentar fazer login.')

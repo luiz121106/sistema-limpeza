@@ -2,12 +2,25 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Calendar, Clock, MapPin, CheckCircle, Play, Navigation, AlertCircle, RefreshCw, LogOut, ShieldAlert } from 'lucide-react'
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  CheckCircle, 
+  Play, 
+  Navigation, 
+  AlertCircle, 
+  RefreshCw, 
+  LogOut, 
+  ShieldAlert,
+  Camera 
+} from 'lucide-react'
+import JobPhotosModal from '@/components/JobPhotosModal'
 
 interface Cleaner {
   id: string
   name: string
-  email: string
+  email: string 
   user_id?: string | null
 }
 
@@ -32,8 +45,10 @@ export default function CleanerPortalPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [unauthorized, setUnauthorized] = useState(false)
 
-  // Data selecionada (padrão: hoje, no fuso horário LOCAL — não usar toISOString()
-  // aqui, pois ela converte pra UTC e pode "pular" pro dia seguinte à noite no Brasil)
+  // Estado para controlar o modal de fotos aberto
+  const [selectedJobForPhotos, setSelectedJobForPhotos] = useState<Job | null>(null)
+
+  // Data selecionada (padrão: hoje, no fuso horário LOCAL)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date()
     const year = d.getFullYear()
@@ -42,11 +57,13 @@ export default function CleanerPortalPage() {
     return `${year}-${month}-${day}`
   })
 
-  // Logout — declarado antes dos effects que o usam
+  // Logout limpo e direto para a tela de login (sem pushState e sem conflito)
   const handleLogout = useCallback(async () => {
-    await supabase.auth.signOut()
-    window.history.pushState(null, '', '/')
-    window.location.replace('/')
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      window.location.replace('/limpador/login')
+    }
   }, [])
 
   // Buscar apenas os agendamentos do limpador autenticado
@@ -79,54 +96,64 @@ export default function CleanerPortalPage() {
     setLoading(false)
   }, [])
 
-  // ---------------------------------------------------------------------
-  // HOOK 1 — trava da seta "voltar" do navegador + listener de sessão.
-  // Fica no nível superior do componente, roda uma única vez.
-  // ---------------------------------------------------------------------
+  // HOOK 1 — ouve apenas saída explícita da conta
   useEffect(() => {
-    window.history.pushState(null, '', window.location.href)
-    const onPopState = () => {
-      window.history.pushState(null, '', window.location.href)
-    }
-    window.addEventListener('popstate', onPopState)
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session || event === 'SIGNED_OUT') {
-        window.location.replace('/')
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        window.location.replace('/limpador/login')
       }
     })
 
     return () => {
-      window.removeEventListener('popstate', onPopState)
       authListener.subscription.unsubscribe()
     }
   }, [])
 
-  // ---------------------------------------------------------------------
-  // HOOK 2 — autentica, resolve o registro em `cleaners` e busca a agenda.
-  // Roda de novo sempre que a data selecionada muda.
-  // ---------------------------------------------------------------------
+  // HOOK 2 — autentica, resolve o registro em `cleaners` e busca a agenda
   useEffect(() => {
     let cancelled = false
 
     async function initCleanerPortal() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
 
-      if (!user) {
-        window.location.href = '/limpador/login'
+      if (!session || !session.user) {
+        window.location.replace('/limpador/login')
         return
       }
 
-      const { data: cleanerData } = await supabase
+      // 1. Busca pelo user_id vinculado
+      let { data: cleanerRows, error: cleanerError } = await supabase
         .from('cleaners')
         .select('*')
-        .eq('email', user.email)
+        .eq('user_id', session.user.id)
         .eq('active', true)
-        .single()
+        .limit(1)
+
+      let cleanerData = cleanerRows?.[0] ?? null
+
+      // 2. Fallback: busca pelo e-mail se ainda não estiver vinculado
+      if (!cleanerData && !cleanerError && session.user.email) {
+        const res = await supabase
+          .from('cleaners')
+          .select('*')
+          .ilike('email', session.user.email.trim())
+          .eq('active', true)
+          .order('user_id', { ascending: false, nullsFirst: false })
+          .limit(1)
+
+        cleanerData = res.data?.[0] ?? null
+        cleanerError = res.error
+      }
 
       if (cancelled) return
 
-      if (!cleanerData) {
+      if (cleanerError || !cleanerData) {
+        console.error('Motivo do bloqueio:', cleanerError?.message || 'Registo não encontrado ou inativo', {
+          code: cleanerError?.code,
+          details: cleanerError?.details,
+          email: session.user.email,
+          userId: session.user.id
+        })
         setUnauthorized(true)
         setLoading(false)
         return
@@ -138,11 +165,11 @@ export default function CleanerPortalPage() {
       if (!cleanerData.user_id) {
         await supabase
           .from('cleaners')
-          .update({ user_id: user.id })
+          .update({ user_id: session.user.id })
           .eq('id', cleanerData.id)
       }
 
-      fetchJobs(cleanerData.id, selectedDate)
+      await fetchJobs(cleanerData.id, selectedDate)
     }
 
     initCleanerPortal()
@@ -187,7 +214,7 @@ export default function CleanerPortalPage() {
         </p>
         <button
           onClick={handleLogout}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer"
         >
           Sair e Tentar Novamente
         </button>
@@ -320,6 +347,16 @@ export default function CleanerPortalPage() {
                     </div>
                   )}
 
+                  {/* BOTÃO DE ANEXAR / VER FOTOS DA LIMPEZA */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJobForPhotos(job)}
+                    className="w-full bg-slate-800 hover:bg-slate-700 active:scale-98 border border-slate-700 text-slate-200 text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer font-bold"
+                  >
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    Anexar / Ver Fotos da Limpeza
+                  </button>
+
                   {/* Ações de Status */}
                   <div className="pt-1">
                     {isCompleted ? (
@@ -357,6 +394,15 @@ export default function CleanerPortalPage() {
           </div>
         )}
       </main>
+
+      {/* Modal de Upload de Fotos (Aberto ao Clicar no Botão) */}
+      {selectedJobForPhotos && (
+        <JobPhotosModal
+          jobId={selectedJobForPhotos.id}
+          clientName={selectedJobForPhotos.clients?.name || 'Imóvel'}
+          onClose={() => setSelectedJobForPhotos(null)}
+        />
+      )}
     </div>
   )
 }

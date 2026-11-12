@@ -59,6 +59,7 @@ export default function LimpadoresPage() {
   const [selectedCleaner, setSelectedCleaner] = useState<Cleaner | null>(null)
   const [accessEmail, setAccessEmail] = useState('')
   const [accessPassword, setAccessPassword] = useState('')
+  const [accessRole, setAccessRole] = useState<'cleaner' | 'admin'>('cleaner')
   const [accessLoading, setAccessLoading] = useState(false)
   const [accessError, setAccessError] = useState('')
   const [accessSuccess, setAccessSuccess] = useState(false)
@@ -179,6 +180,7 @@ export default function LimpadoresPage() {
     setSelectedCleaner(cleaner)
     setAccessEmail(cleaner.email || '')
     setAccessPassword('')
+    setAccessRole('cleaner')
     setAccessError('')
     setAccessSuccess(false)
   }
@@ -200,6 +202,7 @@ export default function LimpadoresPage() {
           cleanerId: selectedCleaner.id,
           email: accessEmail,
           password: accessPassword,
+          role: accessRole,
         }),
       })
 
@@ -314,7 +317,7 @@ export default function LimpadoresPage() {
                   title="Gerar Login / Definir Senha"
                 >
                   <KeyRound className="w-4 h-4 text-emerald-400" />
-                  {cleaner.user_id ? 'Alterar Senha' : 'Gerar Acesso'}
+                  {cleaner.user_id ? 'Alterar Acesso' : 'Gerar Acesso'}
                 </button>
 
                 <div className="flex items-center gap-1 text-slate-400">
@@ -580,7 +583,7 @@ export default function LimpadoresPage() {
         </div>
       )}
 
-      {/* Modal para Gerar/Criar Senha */}
+      {/* Modal para Gerar/Criar Senha e Nível de Acesso */}
       {selectedCleaner && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative space-y-4">
@@ -604,13 +607,13 @@ export default function LimpadoresPage() {
             {selectedCleaner.user_id && (
               <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-3 rounded-xl text-xs flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Este funcionário já possui acesso. A nova senha substituirá a antiga.</span>
+                <span>Este funcionário já possui acesso. Salvar atualizará a senha e o nível de acesso.</span>
               </div>
             )}
 
             {accessSuccess ? (
               <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 p-4 rounded-xl text-center text-xs font-semibold flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-5 h-5" /> Senha criada com sucesso!
+                <CheckCircle2 className="w-5 h-5" /> Acesso configurado com sucesso!
               </div>
             ) : (
               <form onSubmit={handleCreateAccess} className="space-y-4">
@@ -619,6 +622,18 @@ export default function LimpadoresPage() {
                     {accessError}
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Nível de Acesso</label>
+                  <select
+                    value={accessRole}
+                    onChange={(e) => setAccessRole(e.target.value as 'cleaner' | 'admin')}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="cleaner">Limpador (Acesso apenas à Agenda/Portal)</option>
+                    <option value="admin">Administrador (Acesso total ao Dashboard)</option>
+                  </select>
+                </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">E-mail do Funcionário</label>
@@ -658,7 +673,7 @@ export default function LimpadoresPage() {
                     disabled={accessLoading}
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition disabled:opacity-50 cursor-pointer"
                   >
-                    {accessLoading ? 'Salvando...' : 'Salvar Senha'}
+                    {accessLoading ? 'Salvando...' : 'Salvar Acesso'}
                   </button>
                 </div>
               </form>

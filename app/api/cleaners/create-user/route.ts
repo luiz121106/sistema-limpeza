@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { cleanerId, email, password } = await req.json()
+    const { cleanerId, email, password, role = 'cleaner' } = await req.json()
 
     if (!cleanerId || !email || !password) {
       return NextResponse.json(
@@ -16,6 +16,9 @@ export async function POST(req: Request) {
         { status: 400 }
       )
     }
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const validRole = role === 'admin' ? 'admin' : 'cleaner'
 
     // Busca o funcionário no banco
     const { data: cleaner, error: cleanerErr } = await supabaseAdmin
@@ -31,36 +34,53 @@ export async function POST(req: Request) {
     let userId = cleaner.user_id
 
     if (userId) {
-      // Se já possui acesso, atualiza e-mail e senha
+      // Se já possui acesso, atualiza e-mail, senha e nível de acesso (role)
       const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        email,
+        email: normalizedEmail,
         password,
         email_confirm: true,
+        user_metadata: { role: validRole },
       })
 
       if (updateErr) throw updateErr
     } else {
-      // Se não possui acesso, cria novo usuário no Supabase Auth
-      const { data: authData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { role: 'cleaner' },
-      })
+      // Verifica se o e-mail já existe no Supabase Auth antes de criar
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers()
+      const existingAuthUser = listData?.users?.find(
+        (u) => u.email?.toLowerCase() === normalizedEmail
+      )
 
-      if (createErr) throw createErr
-      userId = authData.user.id
+      if (existingAuthUser) {
+        userId = existingAuthUser.id
+        const { error: updateExistingErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+          password,
+          email_confirm: true,
+          user_metadata: { role: validRole },
+        })
+        if (updateExistingErr) throw updateExistingErr
+      } else {
+        // Cria novo usuário no Supabase Auth com o nível de acesso escolhido
+        const { data: authData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email: normalizedEmail,
+          password,
+          email_confirm: true,
+          user_metadata: { role: validRole },
+        })
 
-      // Vincula o user_id retornado à tabela de cleaners
-      const { error: linkErr } = await supabaseAdmin
-        .from('cleaners')
-        .update({ user_id: userId, email })
-        .eq('id', cleanerId)
-
-      if (linkErr) throw linkErr
+        if (createErr) throw createErr
+        userId = authData.user.id
+      }
     }
 
-    return NextResponse.json({ success: true, userId })
+    // Vincula o user_id e atualiza o e-mail na tabela cleaners
+    const { error: linkErr } = await supabaseAdmin
+      .from('cleaners')
+      .update({ user_id: userId, email: normalizedEmail })
+      .eq('id', cleanerId)
+
+    if (linkErr) throw linkErr
+
+    return NextResponse.json({ success: true, userId, role: validRole })
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || 'Erro interno do servidor.' },
